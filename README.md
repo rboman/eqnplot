@@ -59,55 +59,66 @@ Exemples:
 python -m unittest discover -s tests -v
 ```
 
-## Distribution Windows
+## Distribution and Packaging
 
-### Build executable
+### Build on Windows
 
-Mode dossier recommande:
+Recommended folder build:
 
 ```powershell
 .\build.ps1
 ```
 
-Mode executable unique:
+Single executable:
 
 ```powershell
 .\build.ps1 -OneFile
 ```
 
-Le mode dossier produit `dist\EqnPlot\EqnPlot.exe`.
+The folder build produces `dist/EqnPlot/EqnPlot.exe`.
 
-### PyInstaller manuel
+### Cross-platform build
 
-```powershell
-pip install pyinstaller
-pyinstaller --noconfirm --clean EqnPlot.spec
+The project now includes a portable build helper:
+
+```bash
+python build.py
+python build.py --onefile
 ```
 
-### Si PowerShell bloque les scripts
+This helper:
 
-Selon la configuration Windows, PowerShell peut refuser `Activate.ps1` ou `build.ps1` avec un message du type `running scripts is disabled on this system`.
+- uses `.venv/Scripts/python.exe` on Windows
+- uses `.venv/bin/python` on Linux and macOS
+- uses only relative paths
+- chooses the correct PyInstaller data separator automatically
 
-Le plus simple est d'autoriser les scripts uniquement pour la session en cours:
+The PyInstaller spec also uses relative paths now, so the project can be moved to another machine or folder without edits.
+
+### If PowerShell blocks scripts
+
+Depending on your Windows policy, PowerShell may refuse `Activate.ps1` or `build.ps1` with a message like `running scripts is disabled on this system`.
+
+The simplest workaround is to allow scripts only for the current session:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\build.ps1
 ```
 
-Ou en une seule commande:
+Or in a single command:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-Pour le mode `onefile`:
+For `onefile` mode:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -OneFile
 ```
 
-Note: il n'est pas necessaire d'activer manuellement le virtualenv pour utiliser `build.ps1`, car le script appelle directement `.\.venv\Scripts\python.exe`.
+Note: you do not need to activate the virtualenv manually to use `build.ps1`, because it directly calls `.\.venv\Scripts\python.exe`.
 
 ### Installateur Windows
 
@@ -118,13 +129,15 @@ Le fichier [installer.iss](D:/dev/VIBECODING/eqnplot/installer.iss) est prevu po
 3. Ouvrir `installer.iss` dans Inno Setup
 4. Compiler l'installateur
 
-Le resultat sera genere dans `installer-output\`.
+The result will be generated in `installer-output\`.
+
+This installer is Windows-only by design. On Linux, the application should be launched directly with Python or packaged with a Linux-specific format such as AppImage.
 
 ### Icone
 
-L'icone Windows utilisee par defaut est `assets\eqnplot-icon.ico`.
+The default application icon is `assets/eqnplot-icon.ico`.
 
-Elle est maintenant:
+It is now:
 
-- injectee dans l'executable Windows via `--icon`
-- embarquee aussi comme ressource de l'application PyQt pour que l'icone apparaisse correctement dans la fenetre et la barre des taches, y compris en build PyInstaller
+- injected into the Windows executable via `--icon`
+- bundled as an application resource so it can still be loaded correctly in PyInstaller builds

@@ -1,11 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+
+PROJECT_ROOT = Path.cwd()
+ICON_PATH = PROJECT_ROOT / "assets" / "eqnplot-icon.ico"
+
 
 a = Analysis(
-    ['main.py'],
-    pathex=[],
+    ["main.py"],
+    pathex=[str(PROJECT_ROOT)],
     binaries=[],
-    datas=[('D:\\dev\\VIBECODING\\eqnplot\\assets\\eqnplot-icon.ico', 'assets')],
+    datas=[(str(ICON_PATH), "assets")] if ICON_PATH.exists() else [],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -22,7 +28,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='EqnPlot',
+    name="EqnPlot",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,5 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['D:\\dev\\VIBECODING\\eqnplot\\assets\\eqnplot-icon.ico'],
+    icon=[str(ICON_PATH)] if ICON_PATH.exists() else None,
 )
