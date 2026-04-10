@@ -2,6 +2,11 @@
 
 Mini application PyQt5 pour tracer une equation de type `y = f(x)`.
 
+Developer restart docs:
+
+- `ARCHITECTURE.md`
+- `SESSION_HANDOFF.md`
+
 ## Fonctionnalites
 
 - Saisie d'une equation en fonction de `x`
@@ -144,6 +149,13 @@ Le fichier [installer.iss](D:/dev/VIBECODING/eqnplot/installer.iss) est prevu po
 The result will be generated in `installer-output\`.
 
 This installer is Windows-only by design. On Linux, the application should be launched directly with Python or packaged with a Linux-specific format such as AppImage.
+
+The installer now lets the user choose between:
+
+- an all-users install in `Program Files`
+- a per-user install in `%LOCALAPPDATA%\Programs`
+
+The installer now starts without requiring admin rights by default. Elevation should only be requested if the user explicitly switches to an all-users installation.
 
 ### Icone
 

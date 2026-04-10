@@ -8,9 +8,12 @@ AppId={{8C774A3A-DF78-4E68-B0CB-20CCBBA4C9B3}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={code:GetDefaultDir}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+UninstallDisplayIcon={app}\{#MyAppExeName}
 OutputDir=installer-output
 OutputBaseFilename=EqnPlot-Setup
 Compression=lzma
@@ -32,3 +35,12 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function GetDefaultDir(Param: string): string;
+begin
+  if IsAdminInstallMode then
+    Result := ExpandConstant('{autopf}\{#MyAppName}')
+  else
+    Result := ExpandConstant('{localappdata}\Programs\{#MyAppName}');
+end;
