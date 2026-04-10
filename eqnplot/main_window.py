@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         control_panel = self._build_controls()
         self.plot_widget = PlotWidget()
         self.plot_widget.viewport_changed.connect(self._sync_range_inputs)
+        self.plot_widget.cursor_value_changed.connect(self._sync_cursor_value)
 
         layout.addWidget(control_panel, 0)
         layout.addWidget(self.plot_widget, 1)
@@ -77,8 +78,11 @@ class MainWindow(QMainWindow):
         self.axes_checkbox.setChecked(True)
         self.grid_checkbox = QCheckBox("Afficher la grille")
         self.grid_checkbox.setChecked(True)
+        self.axis_labels_checkbox = QCheckBox("Afficher les valeurs des axes")
+        self.axis_labels_checkbox.setChecked(True)
         display_layout.addWidget(self.axes_checkbox)
         display_layout.addWidget(self.grid_checkbox)
+        display_layout.addWidget(self.axis_labels_checkbox)
 
         color_group = QGroupBox("Couleurs")
         color_layout = QGridLayout(color_group)
@@ -107,12 +111,15 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel("Pret.")
         self.status_label.setWordWrap(True)
+        self.cursor_value_label = QLabel("")
+        self.cursor_value_label.setWordWrap(True)
 
         panel_layout.addWidget(form_group)
         panel_layout.addWidget(display_group)
         panel_layout.addWidget(color_group)
         panel_layout.addLayout(actions_layout)
         panel_layout.addWidget(self.status_label)
+        panel_layout.addWidget(self.cursor_value_label)
         panel_layout.addStretch(1)
 
         return panel
@@ -165,6 +172,7 @@ class MainWindow(QMainWindow):
             x_max=x_max,
             show_axes=self.axes_checkbox.isChecked(),
             show_grid=self.grid_checkbox.isChecked(),
+            show_axis_labels=self.axis_labels_checkbox.isChecked(),
             curve_color=self._curve_color,
             axis_color=self._axis_color,
             grid_color=self._grid_color,
@@ -222,6 +230,9 @@ class MainWindow(QMainWindow):
             self.status_label.setText(
                 f"Trace de y = {self.expression_input.text().strip()} sur [{x_min:.6g}, {x_max:.6g}]"
             )
+
+    def _sync_cursor_value(self, text: str) -> None:
+        self.cursor_value_label.setText(text)
 
 
 def run() -> None:

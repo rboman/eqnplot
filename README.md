@@ -7,10 +7,12 @@ Mini application PyQt5 pour tracer une equation de type `y = f(x)`.
 - Saisie d'une equation en fonction de `x`
 - Affichage optionnel des axes
 - Affichage optionnel d'une grille
+- Affichage optionnel des valeurs de graduation sur les axes
 - Choix des couleurs de la courbe, des axes et de la grille
 - Reglage de la plage `x_min` / `x_max`
 - Zoom a la molette de la souris
 - Deplacement horizontal par glisser-deposer
+- Lecture continue de `x` et `y` sous la souris
 - Export de l'image au format PNG
 
 ## Installation

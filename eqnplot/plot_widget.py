@@ -2,7 +2,7 @@ import math
 from dataclasses import replace
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal
+from PyQt5.QtCore import QPoint, QPointF, QRect, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QWidget
 
@@ -14,6 +14,7 @@ PointData = Tuple[float, Optional[float]]
 
 class PlotWidget(QWidget):
     viewport_changed = pyqtSignal(float, float)
+    cursor_value_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,6 +24,7 @@ class PlotWidget(QWidget):
         self._status_message = "Saisissez une equation puis cliquez sur Tracer."
         self._dragging = False
         self._last_drag_pos: Optional[QPoint] = None
+        self._hover_pos: Optional[QPoint] = None
         self.setMouseTracking(True)
         self.setCursor(Qt.CrossCursor)
 
@@ -30,12 +32,15 @@ class PlotWidget(QWidget):
         self._plot_function = plot_function
         self._plot_options = options
         self._status_message = ""
+        self._hover_pos = None
         self.update()
 
     def clear_plot(self, message: str) -> None:
         self._plot_function = None
         self._plot_options = None
         self._status_message = message
+        self._hover_pos = None
+        self.cursor_value_changed.emit("")
         self.update()
 
     def export_png(self, path: str) -> bool:
@@ -92,6 +97,17 @@ class PlotWidget(QWidget):
                 self._last_drag_pos = event.pos()
             event.accept()
             return
+
+        if self.has_plot() and self._plot_area().contains(event.pos()):
+            self._hover_pos = event.pos()
+            self._emit_cursor_value()
+            self.update()
+            event.accept()
+            return
+
+        self._hover_pos = None
+        self.cursor_value_changed.emit("")
+        self.update()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):  # noqa: N802
@@ -106,6 +122,9 @@ class PlotWidget(QWidget):
     def leaveEvent(self, event):  # noqa: N802
         if not self._dragging:
             self.setCursor(Qt.CrossCursor)
+        self._hover_pos = None
+        self.cursor_value_changed.emit("")
+        self.update()
         super().leaveEvent(event)
 
     def wheelEvent(self, event):  # noqa: N802
@@ -180,8 +199,13 @@ class PlotWidget(QWidget):
         if self._plot_options.show_axes:
             self._draw_axes(painter, plot_rect, y_min, y_max)
 
+        if self._plot_options.show_axis_labels:
+            self._draw_axis_labels(painter, plot_rect, y_min, y_max)
+
         self._draw_curve(painter, plot_rect, samples, y_min, y_max)
+        self._draw_hover_indicator(painter, plot_rect, y_min, y_max)
         painter.setPen(QColor("#444444"))
+        painter.setBrush(Qt.NoBrush)
         painter.drawRect(plot_rect)
 
     def _plot_area(self) -> QRectF:
@@ -194,6 +218,7 @@ class PlotWidget(QWidget):
             return
         self._plot_options = replace(self._plot_options, x_min=x_min, x_max=x_max)
         self.viewport_changed.emit(x_min, x_max)
+        self._emit_cursor_value()
         self.update()
 
     def _sample_points(self, pixel_width: int) -> List[PointData]:
@@ -245,6 +270,39 @@ class PlotWidget(QWidget):
             y_zero = self._map_y(0.0, plot_rect, y_min, y_max)
             painter.drawLine(QPointF(plot_rect.left(), y_zero), QPointF(plot_rect.right(), y_zero))
 
+    def _draw_axis_labels(self, painter: QPainter, plot_rect: QRectF, y_min: float, y_max: float) -> None:
+        assert self._plot_options is not None
+        painter.setPen(QColor(self._plot_options.axis_color))
+        font_metrics = painter.fontMetrics()
+        x_axis_y = self._label_x_axis_y(plot_rect, y_min, y_max)
+        y_axis_x = self._label_y_axis_x(plot_rect)
+
+        for x_tick in self._generate_ticks(self._plot_options.x_min, self._plot_options.x_max):
+            x_pos = self._map_x(x_tick, plot_rect)
+            label = self._format_tick(x_tick)
+            text_width = font_metrics.horizontalAdvance(label)
+            text_rect = QRect(
+                int(x_pos - text_width / 2 - 2),
+                int(x_axis_y + 4),
+                text_width + 4,
+                font_metrics.height(),
+            )
+            if plot_rect.left() <= text_rect.center().x() <= plot_rect.right():
+                painter.drawText(text_rect, Qt.AlignCenter, label)
+
+        for y_tick in self._generate_ticks(y_min, y_max):
+            y_pos = self._map_y(y_tick, plot_rect, y_min, y_max)
+            label = self._format_tick(y_tick)
+            text_width = font_metrics.horizontalAdvance(label)
+            text_rect = QRect(
+                int(y_axis_x - text_width - 8),
+                int(y_pos - font_metrics.height() / 2),
+                text_width + 4,
+                font_metrics.height(),
+            )
+            if plot_rect.top() <= y_pos <= plot_rect.bottom():
+                painter.drawText(text_rect, Qt.AlignRight | Qt.AlignVCenter, label)
+
     def _draw_curve(
         self,
         painter: QPainter,
@@ -282,6 +340,37 @@ class PlotWidget(QWidget):
 
         painter.drawPath(path)
 
+    def _draw_hover_indicator(self, painter: QPainter, plot_rect: QRectF, y_min: float, y_max: float) -> None:
+        if self._hover_pos is None or self._plot_options is None or self._plot_function is None:
+            return
+        if not plot_rect.contains(self._hover_pos):
+            return
+
+        x_value = self._pixel_to_x(self._hover_pos.x(), plot_rect)
+        try:
+            y_value = self._plot_function(x_value)
+            if not math.isfinite(y_value):
+                return
+        except (ValueError, ZeroDivisionError, OverflowError):
+            return
+
+        if y_value < y_min or y_value > y_max:
+            return
+
+        x_pos = self._map_x(x_value, plot_rect)
+        y_pos = self._map_y(y_value, plot_rect, y_min, y_max)
+
+        guide_pen = QPen(QColor("#666666"), 1)
+        guide_pen.setStyle(Qt.DotLine)
+        painter.setPen(guide_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawLine(QPointF(x_pos, plot_rect.top()), QPointF(x_pos, plot_rect.bottom()))
+        painter.drawLine(QPointF(plot_rect.left(), y_pos), QPointF(plot_rect.right(), y_pos))
+
+        painter.setPen(QPen(QColor(self._plot_options.curve_color), 2))
+        painter.setBrush(QColor(self._plot_options.curve_color))
+        painter.drawEllipse(QPointF(x_pos, y_pos), 4, 4)
+
     def _map_x(self, x_value: float, plot_rect: QRectF) -> float:
         assert self._plot_options is not None
         x_min = self._plot_options.x_min
@@ -290,6 +379,15 @@ class PlotWidget(QWidget):
         if math.isclose(span, 0.0):
             return plot_rect.center().x()
         return plot_rect.left() + ((x_value - x_min) / span) * plot_rect.width()
+
+    def _pixel_to_x(self, pixel_x: float, plot_rect: QRectF) -> float:
+        assert self._plot_options is not None
+        span = self._plot_options.x_max - self._plot_options.x_min
+        if math.isclose(plot_rect.width(), 0.0):
+            return self._plot_options.x_min
+        ratio = (pixel_x - plot_rect.left()) / plot_rect.width()
+        ratio = min(max(ratio, 0.0), 1.0)
+        return self._plot_options.x_min + ratio * span
 
     @staticmethod
     def _map_y(y_value: float, plot_rect: QRectF, y_min: float, y_max: float) -> float:
@@ -325,3 +423,40 @@ class PlotWidget(QWidget):
             value += step
             guard += 1
         return ticks
+
+    def _emit_cursor_value(self) -> None:
+        if (
+            self._hover_pos is None
+            or self._plot_options is None
+            or self._plot_function is None
+            or not self._plot_area().contains(self._hover_pos)
+        ):
+            self.cursor_value_changed.emit("")
+            return
+
+        x_value = self._pixel_to_x(self._hover_pos.x(), self._plot_area())
+        try:
+            y_value = self._plot_function(x_value)
+            if not math.isfinite(y_value):
+                raise ValueError
+            self.cursor_value_changed.emit(
+                f"x = {x_value:.6g}    y = {y_value:.6g}"
+            )
+        except (ValueError, ZeroDivisionError, OverflowError):
+            self.cursor_value_changed.emit(f"x = {x_value:.6g}    y = indefini")
+
+    @staticmethod
+    def _format_tick(value: float) -> str:
+        if math.isclose(value, 0.0, abs_tol=1e-12):
+            value = 0.0
+        return f"{value:.6g}"
+
+    @staticmethod
+    def _label_x_axis_y(plot_rect: QRectF, y_min: float, y_max: float) -> float:
+        if y_min <= 0 <= y_max:
+            return max(plot_rect.top(), min(plot_rect.bottom() - 18, PlotWidget._map_y(0.0, plot_rect, y_min, y_max)))
+        return plot_rect.bottom() - 18
+
+    @staticmethod
+    def _label_y_axis_x(plot_rect: QRectF) -> float:
+        return plot_rect.left() + 42
