@@ -2,7 +2,7 @@ import sys
 from typing import Callable, Tuple
 
 from PyQt5.QtCore import QSettings
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QIcon
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -21,6 +21,8 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from pathlib import Path
+import ctypes
 
 from eqnplot.models import PlotOptions
 from eqnplot.parser import ExpressionError, ExpressionParser
@@ -35,6 +37,7 @@ DEFAULT_SHOW_AXIS_LABELS = True
 DEFAULT_OPTIMIZED_RENDER = False
 DEFAULT_PALETTE = "Light"
 MAX_HISTORY_ITEMS = 10
+APP_ID = "OpenAI.Codex.EqnPlot"
 
 PALETTES = {
     "Light": {
@@ -69,6 +72,10 @@ class MainWindow(QMainWindow):
         self._custom_axis_color = self._axis_color
         self._custom_grid_color = self._grid_color
         self._color_labels = []
+
+        icon = load_app_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -588,7 +595,29 @@ class MainWindow(QMainWindow):
 
 
 def run() -> None:
+    if sys.platform.startswith("win"):
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+        except Exception:
+            pass
+
     app = QApplication.instance() or QApplication(sys.argv)
+    icon = load_app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
+
+
+def load_app_icon() -> QIcon:
+    project_root = Path(__file__).resolve().parent.parent
+    candidates = [
+        project_root / "assets" / "eqnplot-icon.ico",
+        project_root / "assets" / "eqnplot.ico",
+        project_root / "assets" / "eqnplot-icon.png",
+    ]
+    for path in candidates:
+        if path.exists():
+            return QIcon(str(path))
+    return QIcon()
