@@ -97,12 +97,17 @@ class MainWindow(QMainWindow):
 
         self.expression_input = QLineEdit(DEFAULT_EXPRESSION)
         self.expression_input.setPlaceholderText("Ex: sin(x) ou x**2")
+        self.expression_input.setToolTip(
+            "Entrez une expression en fonction de x, par exemple sin(x), x**2 ou exp(-x**2)."
+        )
         self.expression_input.editingFinished.connect(self.plot_expression)
         self.expression_input.returnPressed.connect(self.plot_expression)
         form_layout.addRow("y =", self.expression_input)
 
         self.x_min_input = QLineEdit(DEFAULT_X_MIN)
         self.x_max_input = QLineEdit(DEFAULT_X_MAX)
+        self.x_min_input.setToolTip("Borne minimale de l'intervalle de trace sur l'axe X.")
+        self.x_max_input.setToolTip("Borne maximale de l'intervalle de trace sur l'axe X.")
         self.x_min_input.editingFinished.connect(self.plot_expression)
         self.x_min_input.returnPressed.connect(self.plot_expression)
         self.x_max_input.editingFinished.connect(self.plot_expression)
@@ -115,12 +120,18 @@ class MainWindow(QMainWindow):
 
         self.axes_checkbox = QCheckBox("Afficher les axes")
         self.axes_checkbox.setChecked(DEFAULT_SHOW_AXES)
+        self.axes_checkbox.setToolTip("Affiche les axes X et Y sur le graphe.")
         self.grid_checkbox = QCheckBox("Afficher la grille")
         self.grid_checkbox.setChecked(DEFAULT_SHOW_GRID)
+        self.grid_checkbox.setToolTip("Affiche une grille de lecture dans la zone de trace.")
         self.axis_labels_checkbox = QCheckBox("Afficher les valeurs des axes")
         self.axis_labels_checkbox.setChecked(DEFAULT_SHOW_AXIS_LABELS)
+        self.axis_labels_checkbox.setToolTip("Affiche les graduations numeriques sur les axes.")
         self.optimized_render_checkbox = QCheckBox("Mode optimise (plus rapide)")
         self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
+        self.optimized_render_checkbox.setToolTip(
+            "Mode plus rapide pour les grandes plages, avec un rendu parfois moins lisse."
+        )
         self.axes_checkbox.toggled.connect(self.plot_expression)
         self.grid_checkbox.toggled.connect(self.plot_expression)
         self.axis_labels_checkbox.toggled.connect(self.plot_expression)
@@ -135,11 +146,18 @@ class MainWindow(QMainWindow):
 
         self.palette_combo = QComboBox()
         self.palette_combo.addItems(["Light", "Dark", "Custom"])
+        self.palette_combo.setToolTip(
+            "Choisissez une palette predefinie ou Custom pour regler les couleurs manuellement."
+        )
         self.palette_combo.currentTextChanged.connect(self._apply_palette_choice)
         self.curve_color_button = QPushButton("Courbe")
         self.axis_color_button = QPushButton("Axes")
         self.grid_color_button = QPushButton("Grille")
         self.background_color_button = QPushButton("Fond")
+        self.background_color_button.setToolTip("Choisit la couleur de fond de la zone de trace.")
+        self.curve_color_button.setToolTip("Choisit la couleur de la courbe.")
+        self.axis_color_button.setToolTip("Choisit la couleur des axes et du cadre du graphe.")
+        self.grid_color_button.setToolTip("Choisit la couleur de la grille.")
         self.background_color_button.clicked.connect(lambda: self._pick_color("background"))
         self.curve_color_button.clicked.connect(lambda: self._pick_color("curve"))
         self.axis_color_button.clicked.connect(lambda: self._pick_color("axis"))
@@ -166,7 +184,10 @@ class MainWindow(QMainWindow):
         actions_layout = QHBoxLayout()
         self.default_button = QPushButton("Default")
         self.about_button = QPushButton("About")
-        self.save_button = QPushButton("Sauvegarder")
+        self.save_button = QPushButton("Capture")
+        self.default_button.setToolTip("Remet tous les parametres aux valeurs par defaut.")
+        self.about_button.setToolTip("Affiche les informations et credits de l'application.")
+        self.save_button.setToolTip("Enregistre l'image courante du graphe au format PNG.")
         self.default_button.clicked.connect(self.reset_to_defaults)
         self.about_button.clicked.connect(self.show_about_dialog)
         self.save_button.clicked.connect(self.save_plot)
@@ -176,8 +197,10 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel("Pret.")
         self.status_label.setWordWrap(True)
+        self.status_label.setToolTip("Resume l'etat courant du trace ou les messages d'erreur.")
         self.cursor_value_label = QLabel("")
         self.cursor_value_label.setWordWrap(True)
+        self.cursor_value_label.setToolTip("Affiche la valeur de la fonction sous la souris dans la zone de trace.")
 
         panel_layout.addWidget(form_group)
         panel_layout.addWidget(display_group)
