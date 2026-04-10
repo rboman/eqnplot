@@ -5,6 +5,7 @@ Mini application PyQt5 pour tracer une equation de type `y = f(x)`.
 ## Fonctionnalites
 
 - Saisie d'une equation en fonction de `x`
+- Mode multi-courbes simple avec liste de fonctions
 - Affichage optionnel des axes
 - Affichage optionnel d'une grille
 - Affichage optionnel des valeurs de graduation sur les axes

@@ -4,9 +4,13 @@ import unittest
 from PyQt5.QtCore import QPoint
 from PyQt5.QtWidgets import QApplication
 
-from eqnplot.models import PlotOptions
+from eqnplot.models import CurveSpec, PlotOptions
 from eqnplot.parser import ExpressionParser
 from eqnplot.plot_widget import PlotWidget
+
+
+def build_options(expression: str, x_min: float, x_max: float) -> PlotOptions:
+    return PlotOptions(curves=[CurveSpec(expression=expression, color="#d1495b")], x_min=x_min, x_max=x_max)
 
 
 class PlotWidgetTests(unittest.TestCase):
@@ -18,7 +22,7 @@ class PlotWidgetTests(unittest.TestCase):
         self.widget = PlotWidget()
         self.widget.resize(640, 420)
         function = ExpressionParser().parse("sin(x)")
-        self.widget.set_plot(function, PlotOptions(expression="sin(x)", x_min=-10, x_max=10))
+        self.widget.set_plot([function], build_options("sin(x)", -10, 10))
 
     def tearDown(self):
         self.widget.close()
@@ -46,13 +50,13 @@ class PlotWidgetTests(unittest.TestCase):
 
         self.assertTrue(captured)
         self.assertIn("x =", captured[-1])
-        self.assertIn("y =", captured[-1])
+        self.assertIn("sin(x) =", captured[-1])
 
     def test_cursor_value_signal_handles_undefined_value(self):
         widget = PlotWidget()
         widget.resize(640, 420)
         function = ExpressionParser().parse("1/x")
-        widget.set_plot(function, PlotOptions(expression="1/x", x_min=-1, x_max=1))
+        widget.set_plot([function], build_options("1/x", -1, 1))
         captured = []
         widget.cursor_value_changed.connect(captured.append)
         widget._hover_pos = QPoint(320, 200)
@@ -73,7 +77,7 @@ class PlotWidgetTests(unittest.TestCase):
 
         widget = PlotWidget()
         widget.resize(640, 420)
-        widget.set_plot(counted, PlotOptions(expression="x", x_min=-10, x_max=10))
+        widget.set_plot([counted], build_options("x", -10, 10))
         plot_rect = widget._plot_area()
 
         widget._get_render_data(plot_rect)
@@ -101,12 +105,12 @@ class PlotWidgetTests(unittest.TestCase):
         plot_rect = widget._plot_area()
 
         counts.append(0)
-        widget.set_plot(counted, PlotOptions(expression="x", x_min=-10, x_max=10))
+        widget.set_plot([counted], build_options("x", -10, 10))
         widget._get_render_data(plot_rect)
         first_count = counts[-1]
 
         counts.append(0)
-        widget.set_plot(counted, PlotOptions(expression="x", x_min=-1000, x_max=1000))
+        widget.set_plot([counted], build_options("x", -1000, 1000))
         widget._get_render_data(plot_rect)
         second_count = counts[-1]
 
@@ -139,6 +143,33 @@ class PlotWidgetTests(unittest.TestCase):
         self.assertEqual(len(columns), 1)
         min_y, max_y = next(iter(columns.values()))
         self.assertLess(min_y, max_y)
+
+    def test_multi_curve_cursor_report_contains_each_expression(self):
+        widget = PlotWidget()
+        widget.resize(640, 420)
+        parser = ExpressionParser()
+        widget.set_plot(
+            [parser.parse("sin(x)"), parser.parse("cos(x)")],
+            PlotOptions(
+                curves=[
+                    CurveSpec(expression="sin(x)", color="#d1495b"),
+                    CurveSpec(expression="cos(x)", color="#2563eb"),
+                ],
+                x_min=-10,
+                x_max=10,
+            ),
+        )
+        captured = []
+        widget.cursor_value_changed.connect(captured.append)
+        widget._hover_pos = QPoint(320, 200)
+
+        widget._emit_cursor_value()
+
+        self.assertTrue(captured)
+        self.assertIn("sin(x) =", captured[-1])
+        self.assertIn("cos(x) =", captured[-1])
+        widget.close()
+        widget.deleteLater()
 
 
 if __name__ == "__main__":

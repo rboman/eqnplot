@@ -6,7 +6,7 @@ from PyQt5.QtCore import QPoint, QPointF, QRect, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt5.QtWidgets import QWidget
 
-from eqnplot.models import PlotOptions
+from eqnplot.models import CurveSpec, PlotOptions
 
 
 PointData = Tuple[float, Optional[float]]
@@ -14,7 +14,7 @@ PointData = Tuple[float, Optional[float]]
 
 @dataclass
 class RenderData:
-    samples: List[PointData]
+    samples_by_curve: List[List[PointData]]
     y_min: float
     y_max: float
 
@@ -27,9 +27,9 @@ class PlotWidget(QWidget):
         super().__init__(parent)
         self.setMinimumSize(640, 420)
         self._plot_options: Optional[PlotOptions] = None
-        self._plot_function: Optional[Callable[[float], float]] = None
+        self._plot_functions: list[Callable[[float], float]] = []
         self._base_x_range: Optional[Tuple[float, float]] = None
-        self._status_message = "Saisissez une equation puis cliquez sur Tracer."
+        self._status_message = "Saisissez une equation pour commencer."
         self._dragging = False
         self._last_drag_pos: Optional[QPoint] = None
         self._hover_pos: Optional[QPoint] = None
@@ -38,8 +38,8 @@ class PlotWidget(QWidget):
         self.setMouseTracking(True)
         self.setCursor(Qt.CrossCursor)
 
-    def set_plot(self, plot_function: Callable[[float], float], options: PlotOptions) -> None:
-        self._plot_function = plot_function
+    def set_plot(self, plot_functions: Sequence[Callable[[float], float]], options: PlotOptions) -> None:
+        self._plot_functions = list(plot_functions)
         self._plot_options = options
         self._base_x_range = (options.x_min, options.x_max)
         self._status_message = ""
@@ -48,7 +48,7 @@ class PlotWidget(QWidget):
         self.update()
 
     def clear_plot(self, message: str) -> None:
-        self._plot_function = None
+        self._plot_functions = []
         self._plot_options = None
         self._base_x_range = None
         self._status_message = message
@@ -69,7 +69,7 @@ class PlotWidget(QWidget):
         return image.save(path, "PNG")
 
     def has_plot(self) -> bool:
-        return self._plot_function is not None and self._plot_options is not None
+        return bool(self._plot_functions) and self._plot_options is not None
 
     def current_x_range(self) -> Optional[Tuple[float, float]]:
         if self._plot_options is None:
@@ -187,7 +187,7 @@ class PlotWidget(QWidget):
         painter.fillRect(rect, background)
         accent_color = QColor(self._plot_options.axis_color) if self._plot_options else QColor("#444444")
 
-        if not self._plot_function or not self._plot_options:
+        if not self._plot_functions or not self._plot_options:
             painter.setPen(accent_color)
             painter.drawText(rect, Qt.AlignCenter, self._status_message)
             return
@@ -201,7 +201,7 @@ class PlotWidget(QWidget):
             painter.setPen(QColor("#aa0000"))
             painter.drawText(rect, Qt.AlignCenter, "Aucune valeur exploitable sur cet intervalle.")
             return
-        samples = render_data.samples
+        samples_by_curve = render_data.samples_by_curve
         y_min = render_data.y_min
         y_max = render_data.y_max
 
@@ -214,7 +214,7 @@ class PlotWidget(QWidget):
         if self._plot_options.show_axis_labels:
             self._draw_axis_labels(painter, plot_rect, y_min, y_max)
 
-        self._draw_curve(painter, plot_rect, samples, y_min, y_max)
+        self._draw_curves(painter, plot_rect, samples_by_curve, y_min, y_max)
         self._draw_hover_indicator(painter, plot_rect, y_min, y_max)
         painter.setPen(accent_color)
         painter.setBrush(Qt.NoBrush)
@@ -238,8 +238,7 @@ class PlotWidget(QWidget):
         self._invalidate_render_cache()
         super().resizeEvent(event)
 
-    def _sample_points(self, pixel_width: int) -> List[PointData]:
-        assert self._plot_function is not None
+    def _sample_points(self, pixel_width: int, plot_function: Callable[[float], float]) -> List[PointData]:
         assert self._plot_options is not None
         sample_count = self._sample_count_for_width(pixel_width)
         x_min = self._plot_options.x_min
@@ -250,7 +249,7 @@ class PlotWidget(QWidget):
         for index in range(sample_count):
             x_value = x_min + index * step
             try:
-                y_value = self._plot_function(x_value)
+                y_value = plot_function(x_value)
                 if math.isfinite(y_value):
                     points.append((x_value, y_value))
                 else:
@@ -269,8 +268,13 @@ class PlotWidget(QWidget):
         if self._render_cache is not None and self._render_cache_size == cache_size:
             return self._render_cache
 
-        samples = self._sample_points(plot_rect.width())
-        y_values = [y for _, y in samples if y is not None and math.isfinite(y)]
+        samples_by_curve = [self._sample_points(plot_rect.width(), func) for func in self._plot_functions]
+        y_values = [
+            y
+            for samples in samples_by_curve
+            for _, y in samples
+            if y is not None and math.isfinite(y)
+        ]
         if not y_values:
             self._render_cache = None
             self._render_cache_size = cache_size
@@ -287,7 +291,7 @@ class PlotWidget(QWidget):
             y_min -= padding
             y_max += padding
 
-        self._render_cache = RenderData(samples=samples, y_min=y_min, y_max=y_max)
+        self._render_cache = RenderData(samples_by_curve=samples_by_curve, y_min=y_min, y_max=y_max)
         self._render_cache_size = cache_size
         return self._render_cache
 
@@ -355,61 +359,62 @@ class PlotWidget(QWidget):
             if plot_rect.top() <= y_pos <= plot_rect.bottom():
                 painter.drawText(text_rect, Qt.AlignRight | Qt.AlignVCenter, label)
 
-    def _draw_curve(
+    def _draw_curves(
         self,
         painter: QPainter,
         plot_rect: QRectF,
-        samples: Sequence[PointData],
+        samples_by_curve: Sequence[Sequence[PointData]],
         y_min: float,
         y_max: float,
     ) -> None:
         assert self._plot_options is not None
-        curve_pen = QPen(QColor(self._plot_options.curve_color), 2)
-        painter.setPen(curve_pen)
+        for curve_spec, samples in zip(self._plot_options.curves, samples_by_curve):
+            curve_pen = QPen(QColor(curve_spec.color), 2)
+            painter.setPen(curve_pen)
 
-        if not self._plot_options.use_optimized_render:
-            self._draw_curve_smooth_path(painter, plot_rect, samples, y_min, y_max)
-            return
-
-        if len(samples) > int(plot_rect.width()) * 3:
-            self._draw_dense_curve_by_columns(painter, plot_rect, samples, y_min, y_max)
-            return
-
-        simplified_samples = self._simplify_samples_for_drawing(samples, plot_rect, y_min, y_max)
-        current_segment = QPolygonF()
-
-        painter.save()
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        for x_value, y_value in simplified_samples:
-            if y_value is None:
-                if current_segment.size() >= 2:
-                    painter.drawPolyline(current_segment)
-                elif current_segment.size() == 1:
-                    painter.drawPoint(current_segment[0])
-                current_segment = QPolygonF()
+            if not self._plot_options.use_optimized_render:
+                self._draw_curve_smooth_path(painter, plot_rect, samples, y_min, y_max)
                 continue
 
-            if y_value < y_min - (y_max - y_min) * 5 or y_value > y_max + (y_max - y_min) * 5:
-                if current_segment.size() >= 2:
-                    painter.drawPolyline(current_segment)
-                elif current_segment.size() == 1:
-                    painter.drawPoint(current_segment[0])
-                current_segment = QPolygonF()
+            if len(samples) > int(plot_rect.width()) * 3:
+                self._draw_dense_curve_by_columns(painter, plot_rect, samples, y_min, y_max)
                 continue
 
-            point = QPointF(
-                self._map_x(x_value, plot_rect),
-                self._map_y(y_value, plot_rect, y_min, y_max),
-            )
-            current_segment.append(point)
+            simplified_samples = self._simplify_samples_for_drawing(samples, plot_rect, y_min, y_max)
+            current_segment = QPolygonF()
 
-        if current_segment.size() >= 2:
-            painter.drawPolyline(current_segment)
-        elif current_segment.size() == 1:
-            painter.drawPoint(current_segment[0])
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing, True)
 
-        painter.restore()
+            for x_value, y_value in simplified_samples:
+                if y_value is None:
+                    if current_segment.size() >= 2:
+                        painter.drawPolyline(current_segment)
+                    elif current_segment.size() == 1:
+                        painter.drawPoint(current_segment[0])
+                    current_segment = QPolygonF()
+                    continue
+
+                if y_value < y_min - (y_max - y_min) * 5 or y_value > y_max + (y_max - y_min) * 5:
+                    if current_segment.size() >= 2:
+                        painter.drawPolyline(current_segment)
+                    elif current_segment.size() == 1:
+                        painter.drawPoint(current_segment[0])
+                    current_segment = QPolygonF()
+                    continue
+
+                point = QPointF(
+                    self._map_x(x_value, plot_rect),
+                    self._map_y(y_value, plot_rect, y_min, y_max),
+                )
+                current_segment.append(point)
+
+            if current_segment.size() >= 2:
+                painter.drawPolyline(current_segment)
+            elif current_segment.size() == 1:
+                painter.drawPoint(current_segment[0])
+
+            painter.restore()
 
     def _draw_curve_smooth_path(
         self,
@@ -545,35 +550,116 @@ class PlotWidget(QWidget):
         return ordered
 
     def _draw_hover_indicator(self, painter: QPainter, plot_rect: QRectF, y_min: float, y_max: float) -> None:
-        if self._hover_pos is None or self._plot_options is None or self._plot_function is None:
+        if self._hover_pos is None or self._plot_options is None or not self._plot_functions:
             return
         if not plot_rect.contains(self._hover_pos):
             return
 
         x_value = self._pixel_to_x(self._hover_pos.x(), plot_rect)
-        try:
-            y_value = self._plot_function(x_value)
-            if not math.isfinite(y_value):
-                return
-        except (ValueError, ZeroDivisionError, OverflowError):
-            return
-
-        if y_value < y_min or y_value > y_max:
-            return
-
         x_pos = self._map_x(x_value, plot_rect)
-        y_pos = self._map_y(y_value, plot_rect, y_min, y_max)
+        hover_entries: List[Tuple[CurveSpec, float, float]] = []
 
         guide_pen = QPen(QColor("#666666"), 1)
         guide_pen.setStyle(Qt.DotLine)
         painter.setPen(guide_pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawLine(QPointF(x_pos, plot_rect.top()), QPointF(x_pos, plot_rect.bottom()))
-        painter.drawLine(QPointF(plot_rect.left(), y_pos), QPointF(plot_rect.right(), y_pos))
 
-        painter.setPen(QPen(QColor(self._plot_options.curve_color), 2))
-        painter.setBrush(QColor(self._plot_options.curve_color))
-        painter.drawEllipse(QPointF(x_pos, y_pos), 4, 4)
+        for curve_spec, plot_function in zip(self._plot_options.curves, self._plot_functions):
+            try:
+                y_value = plot_function(x_value)
+                if not math.isfinite(y_value):
+                    continue
+            except (ValueError, ZeroDivisionError, OverflowError):
+                continue
+
+            if y_value < y_min or y_value > y_max:
+                continue
+
+            y_pos = self._map_y(y_value, plot_rect, y_min, y_max)
+            hover_entries.append((curve_spec, x_pos, y_pos))
+            painter.setPen(QPen(QColor(curve_spec.color), 2))
+            painter.setBrush(QColor(curve_spec.color))
+            painter.drawEllipse(QPointF(x_pos, y_pos), 4, 4)
+
+        self._draw_hover_value_box(painter, plot_rect, x_value)
+
+    def _draw_hover_value_box(
+        self,
+        painter: QPainter,
+        plot_rect: QRectF,
+        x_value: float,
+    ) -> None:
+        assert self._plot_options is not None
+        if self._hover_pos is None:
+            return
+
+        lines = [f"x = {x_value:.6g}"]
+        for curve_spec, plot_function in zip(self._plot_options.curves, self._plot_functions):
+            try:
+                y_value = plot_function(x_value)
+                if not math.isfinite(y_value):
+                    raise ValueError
+                lines.append(f"{curve_spec.expression} = {y_value:.6g}")
+            except (ValueError, ZeroDivisionError, OverflowError):
+                lines.append(f"{curve_spec.expression} = indefini")
+
+        font_metrics = painter.fontMetrics()
+        line_height = font_metrics.height()
+        content_width = max(font_metrics.horizontalAdvance(line) for line in lines)
+        padding_x = 10
+        padding_y = 8
+        bullet_gap = 8
+        bullet_size = 8
+        box_width = content_width + padding_x * 2 + bullet_size + bullet_gap
+        box_height = line_height * len(lines) + padding_y * 2
+
+        anchor_x = float(self._hover_pos.x())
+        anchor_y = float(self._hover_pos.y())
+        box_left = anchor_x + 14
+        box_top = anchor_y - box_height / 2
+
+        if box_left + box_width > plot_rect.right() - 6:
+            box_left = anchor_x - box_width - 14
+        box_left = max(plot_rect.left() + 6, min(box_left, plot_rect.right() - box_width - 6))
+        box_top = max(plot_rect.top() + 6, min(box_top, plot_rect.bottom() - box_height - 6))
+
+        box_rect = QRectF(box_left, box_top, box_width, box_height)
+        box_background = QColor(self._plot_options.background_color)
+        box_background.setAlpha(235)
+        border_color = QColor(self._plot_options.axis_color)
+
+        painter.save()
+        painter.setPen(QPen(border_color, 1))
+        painter.setBrush(box_background)
+        painter.drawRoundedRect(box_rect, 6, 6)
+        painter.setBrush(Qt.NoBrush)
+
+        text_x = box_rect.left() + padding_x + bullet_size + bullet_gap
+        first_baseline = box_rect.top() + padding_y + font_metrics.ascent()
+        for index, line in enumerate(lines):
+            baseline_y = first_baseline + index * line_height
+            line_rect = QRectF(
+                text_x,
+                baseline_y - font_metrics.ascent(),
+                content_width,
+                line_height,
+            )
+            painter.setPen(border_color)
+            painter.drawText(line_rect, Qt.AlignLeft | Qt.AlignVCenter, line)
+
+            if index == 0:
+                continue
+
+            bullet_center = QPointF(
+                box_rect.left() + padding_x + bullet_size / 2,
+                baseline_y - font_metrics.ascent() / 2 + line_height / 2,
+            )
+            painter.setPen(QPen(QColor(self._plot_options.curves[index - 1].color), 1))
+            painter.setBrush(QColor(self._plot_options.curves[index - 1].color))
+            painter.drawEllipse(bullet_center, bullet_size / 2, bullet_size / 2)
+
+        painter.restore()
 
     def _map_x(self, x_value: float, plot_rect: QRectF) -> float:
         assert self._plot_options is not None
@@ -632,22 +718,26 @@ class PlotWidget(QWidget):
         if (
             self._hover_pos is None
             or self._plot_options is None
-            or self._plot_function is None
+            or not self._plot_functions
             or not self._plot_area().contains(self._hover_pos)
         ):
             self.cursor_value_changed.emit("")
             return
 
         x_value = self._pixel_to_x(self._hover_pos.x(), self._plot_area())
-        try:
-            y_value = self._plot_function(x_value)
-            if not math.isfinite(y_value):
-                raise ValueError
-            self.cursor_value_changed.emit(
-                f"x = {x_value:.6g}    y = {y_value:.6g}"
-            )
-        except (ValueError, ZeroDivisionError, OverflowError):
-            self.cursor_value_changed.emit(f"x = {x_value:.6g}    y = indefini")
+        values = [f"x = {x_value:.6g}"]
+        for curve_spec, plot_function in zip(self._plot_options.curves, self._plot_functions):
+            label = curve_spec.expression.strip()
+            if len(label) > 18:
+                label = f"{label[:15]}..."
+            try:
+                y_value = plot_function(x_value)
+                if not math.isfinite(y_value):
+                    raise ValueError
+                values.append(f"{label} = {y_value:.6g}")
+            except (ValueError, ZeroDivisionError, OverflowError):
+                values.append(f"{label} = indefini")
+        self.cursor_value_changed.emit("    ".join(values))
 
     @staticmethod
     def _format_tick(value: float) -> str:

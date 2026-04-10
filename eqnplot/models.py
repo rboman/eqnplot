@@ -2,8 +2,14 @@ from dataclasses import dataclass
 
 
 @dataclass
-class PlotOptions:
+class CurveSpec:
     expression: str
+    color: str
+
+
+@dataclass
+class PlotOptions:
+    curves: list[CurveSpec]
     x_min: float
     x_max: float
     show_axes: bool = True

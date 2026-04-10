@@ -1,5 +1,5 @@
 import sys
-from typing import Callable, Tuple
+from typing import Callable, List, Sequence, Tuple
 
 from PyQt5.QtCore import QSettings
 from PyQt5.QtGui import QColor, QIcon
@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -24,7 +25,7 @@ from PyQt5.QtWidgets import (
 from pathlib import Path
 import ctypes
 
-from eqnplot.models import PlotOptions
+from eqnplot.models import CurveSpec, PlotOptions
 from eqnplot.parser import ExpressionError, ExpressionParser
 from eqnplot.plot_widget import PlotWidget
 
@@ -38,6 +39,7 @@ DEFAULT_OPTIMIZED_RENDER = False
 DEFAULT_PALETTE = "Light"
 MAX_HISTORY_ITEMS = 10
 APP_ID = "OpenAI.Codex.EqnPlot"
+MULTI_CURVE_COLORS = ["#2563eb", "#059669", "#dc2626", "#7c3aed", "#ea580c", "#0f766e"]
 
 PALETTES = {
     "Light": {
@@ -59,7 +61,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("EqnPlot")
-        self.resize(980, 680)
+        self.resize(1470, 680)
         self._settings = QSettings("EqnPlot", "EqnPlot")
 
         self._parser = ExpressionParser()
@@ -87,7 +89,6 @@ class MainWindow(QMainWindow):
         control_panel = self._build_controls()
         self.plot_widget = PlotWidget()
         self.plot_widget.viewport_changed.connect(self._sync_range_inputs)
-        self.plot_widget.cursor_value_changed.connect(self._sync_cursor_value)
 
         layout.addWidget(control_panel, 0)
         layout.addWidget(self.plot_widget, 1)
@@ -96,7 +97,7 @@ class MainWindow(QMainWindow):
 
     def _build_controls(self) -> QWidget:
         panel = QWidget()
-        panel.setFixedWidth(280)
+        panel.setFixedWidth(360)
         panel_layout = QVBoxLayout(panel)
         panel_layout.setSpacing(12)
 
@@ -116,6 +117,33 @@ class MainWindow(QMainWindow):
         self.expression_input.returnPressed.connect(self.plot_expression)
         form_layout.addRow("y =", self.expression_input)
         form_layout.addRow("Recents", self.history_combo)
+
+        self.curve_list = QListWidget()
+        self.curve_list.setToolTip("Liste simple des courbes actuellement affichees.")
+        self.curve_list.currentTextChanged.connect(self._load_selected_curve)
+        self.add_curve_button = QPushButton("Ajouter")
+        self.add_curve_button.setToolTip("Ajoute l'expression courante a la liste des courbes.")
+        self.add_curve_button.clicked.connect(self.add_curve)
+        self.update_curve_button = QPushButton("Mettre a jour")
+        self.update_curve_button.setToolTip("Remplace la courbe selectionnee par l'expression courante.")
+        self.update_curve_button.clicked.connect(self.update_selected_curve)
+        self.remove_curve_button = QPushButton("Supprimer")
+        self.remove_curve_button.setToolTip("Supprime la courbe selectionnee.")
+        self.remove_curve_button.clicked.connect(self.remove_selected_curve)
+        self.clear_curves_button = QPushButton("Vider")
+        self.clear_curves_button.setToolTip("Vide toute la liste de courbes.")
+        self.clear_curves_button.clicked.connect(self.clear_curves)
+
+        curve_actions_layout = QGridLayout()
+        curve_actions_layout.setHorizontalSpacing(8)
+        curve_actions_layout.setVerticalSpacing(8)
+        curve_actions_layout.addWidget(self.add_curve_button, 0, 0)
+        curve_actions_layout.addWidget(self.update_curve_button, 0, 1)
+        curve_actions_layout.addWidget(self.remove_curve_button, 1, 0)
+        curve_actions_layout.addWidget(self.clear_curves_button, 1, 1)
+
+        form_layout.addRow("Courbes", self.curve_list)
+        form_layout.addRow("", curve_actions_layout)
 
         self.x_min_input = QLineEdit(DEFAULT_X_MIN)
         self.x_max_input = QLineEdit(DEFAULT_X_MAX)
@@ -219,16 +247,12 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Pret.")
         self.status_label.setWordWrap(True)
         self.status_label.setToolTip("Resume l'etat courant du trace ou les messages d'erreur.")
-        self.cursor_value_label = QLabel("")
-        self.cursor_value_label.setWordWrap(True)
-        self.cursor_value_label.setToolTip("Affiche la valeur de la fonction sous la souris dans la zone de trace.")
 
         panel_layout.addWidget(form_group)
         panel_layout.addWidget(display_group)
         panel_layout.addWidget(color_group)
         panel_layout.addLayout(actions_layout)
         panel_layout.addWidget(self.status_label)
-        panel_layout.addWidget(self.cursor_value_label)
         panel_layout.addStretch(1)
 
         return panel
@@ -317,9 +341,85 @@ class MainWindow(QMainWindow):
         self._update_color_button(self.axis_color_button, self._axis_color)
         self._update_color_button(self.grid_color_button, self._grid_color)
 
-    def _read_options(self) -> Tuple[PlotOptions, Callable[[float], float]]:
+    def _active_curve_expressions(self) -> List[str]:
+        items = [self.curve_list.item(index).text().strip() for index in range(self.curve_list.count())]
+        items = [item for item in items if item]
+        if items:
+            return items
+
+        expression = self.expression_input.text().strip()
+        return [expression] if expression else []
+
+    def _curve_color_for_index(self, index: int) -> str:
+        if index == 0:
+            return self._curve_color
+        return MULTI_CURVE_COLORS[(index - 1) % len(MULTI_CURVE_COLORS)]
+
+    def _set_curve_list_items(self, expressions: Sequence[str]) -> None:
+        previous = self.curve_list.blockSignals(True)
+        try:
+            self.curve_list.clear()
+            for expression in expressions:
+                if expression.strip():
+                    self.curve_list.addItem(expression.strip())
+        finally:
+            self.curve_list.blockSignals(previous)
+
+    def _load_selected_curve(self, expression: str) -> None:
+        expression = expression.strip()
+        if expression:
+            self.expression_input.setText(expression)
+
+    def add_curve(self) -> None:
         expression = self.expression_input.text().strip()
         if not expression:
+            self.status_label.setText("Veuillez saisir une equation avant de l'ajouter.")
+            return
+        try:
+            self._parser.parse(expression)
+        except ExpressionError as exc:
+            self.status_label.setText(str(exc))
+            return
+
+        items = [self.curve_list.item(index).text() for index in range(self.curve_list.count())]
+        if expression not in items:
+            self.curve_list.addItem(expression)
+        self.curve_list.setCurrentRow(self.curve_list.count() - 1)
+        self.plot_expression()
+
+    def update_selected_curve(self) -> None:
+        current_row = self.curve_list.currentRow()
+        if current_row < 0:
+            self.status_label.setText("Selectionnez d'abord une courbe a mettre a jour.")
+            return
+        expression = self.expression_input.text().strip()
+        if not expression:
+            self.status_label.setText("Veuillez saisir une equation avant la mise a jour.")
+            return
+        try:
+            self._parser.parse(expression)
+        except ExpressionError as exc:
+            self.status_label.setText(str(exc))
+            return
+
+        self.curve_list.item(current_row).setText(expression)
+        self.plot_expression()
+
+    def remove_selected_curve(self) -> None:
+        current_row = self.curve_list.currentRow()
+        if current_row < 0:
+            self.status_label.setText("Selectionnez une courbe a supprimer.")
+            return
+        self.curve_list.takeItem(current_row)
+        self.plot_expression()
+
+    def clear_curves(self) -> None:
+        self._set_curve_list_items([])
+        self.plot_expression()
+
+    def _read_options(self) -> Tuple[PlotOptions, List[Callable[[float], float]]]:
+        expressions = self._active_curve_expressions()
+        if not expressions:
             raise ExpressionError("Veuillez saisir une equation.")
 
         try:
@@ -331,9 +431,13 @@ class MainWindow(QMainWindow):
         if x_min >= x_max:
             raise ExpressionError("x min doit etre strictement inferieur a x max.")
 
-        plot_function = self._parser.parse(expression)
+        plot_functions = [self._parser.parse(expression) for expression in expressions]
+        curves = [
+            CurveSpec(expression=expression, color=self._curve_color_for_index(index))
+            for index, expression in enumerate(expressions)
+        ]
         options = PlotOptions(
-            expression=expression,
+            curves=curves,
             x_min=x_min,
             x_max=x_max,
             show_axes=self.axes_checkbox.isChecked(),
@@ -341,23 +445,30 @@ class MainWindow(QMainWindow):
             show_axis_labels=self.axis_labels_checkbox.isChecked(),
             use_optimized_render=self.optimized_render_checkbox.isChecked(),
             background_color=self._background_color,
-            curve_color=self._curve_color,
             axis_color=self._axis_color,
             grid_color=self._grid_color,
         )
-        return options, plot_function
+        return options, plot_functions
 
     def plot_expression(self) -> None:
         try:
-            options, plot_function = self._read_options()
+            options, plot_functions = self._read_options()
         except ExpressionError as exc:
             self.plot_widget.clear_plot(str(exc))
             self.status_label.setText(str(exc))
             return
 
-        self.plot_widget.set_plot(plot_function, options)
-        self.status_label.setText(f"Trace de y = {options.expression} sur [{options.x_min}, {options.x_max}]")
-        self._remember_expression(options.expression)
+        self.plot_widget.set_plot(plot_functions, options)
+        if len(options.curves) == 1:
+            self.status_label.setText(
+                f"Trace de y = {options.curves[0].expression} sur [{options.x_min}, {options.x_max}]"
+            )
+        else:
+            self.status_label.setText(
+                f"Trace de {len(options.curves)} courbes sur [{options.x_min}, {options.x_max}]"
+            )
+        for curve in options.curves:
+            self._remember_expression(curve.expression)
         self._save_settings()
 
     def save_plot(self) -> None:
@@ -403,9 +514,6 @@ class MainWindow(QMainWindow):
             self.status_label.setText(
                 f"Trace de y = {self.expression_input.text().strip()} sur [{x_min:.6g}, {x_max:.6g}]"
             )
-
-    def _sync_cursor_value(self, text: str) -> None:
-        self.cursor_value_label.setText(text)
 
     def _remember_expression(self, expression: str) -> None:
         expression = expression.strip()
@@ -471,6 +579,7 @@ class MainWindow(QMainWindow):
         widgets = [
             self.history_combo,
             self.expression_input,
+            self.curve_list,
             self.x_min_input,
             self.x_max_input,
             self.axes_checkbox,
@@ -490,13 +599,13 @@ class MainWindow(QMainWindow):
             self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
             self.palette_combo.setCurrentText(DEFAULT_PALETTE)
             self._apply_palette(DEFAULT_PALETTE, trigger_redraw=False)
+            self._set_curve_list_items([])
             self._custom_background_color = PALETTES[DEFAULT_PALETTE]["background"]
             self._custom_curve_color = PALETTES[DEFAULT_PALETTE]["curve"]
             self._custom_axis_color = PALETTES[DEFAULT_PALETTE]["axis"]
             self._custom_grid_color = PALETTES[DEFAULT_PALETTE]["grid"]
             self._set_custom_color_controls_enabled(False)
             self._set_history_items([DEFAULT_EXPRESSION])
-            self.cursor_value_label.clear()
         finally:
             for widget, previous_state in previous_states:
                 widget.blockSignals(previous_state)
@@ -507,6 +616,7 @@ class MainWindow(QMainWindow):
         widgets = [
             self.history_combo,
             self.expression_input,
+            self.curve_list,
             self.x_min_input,
             self.x_max_input,
             self.axes_checkbox,
@@ -533,6 +643,9 @@ class MainWindow(QMainWindow):
                 self._settings.value("use_optimized_render", DEFAULT_OPTIMIZED_RENDER, type=bool)
             )
             self.palette_combo.setCurrentText(palette_name)
+            curve_list_raw = self._settings.value("curve_list", [], type=list)
+            curve_list = [item for item in curve_list_raw if isinstance(item, str) and item.strip()]
+            self._set_curve_list_items(curve_list)
             history_raw = self._settings.value("recent_expressions", [], type=list)
             history = [item for item in history_raw if isinstance(item, str) and item.strip()]
             if not history:
@@ -590,6 +703,10 @@ class MainWindow(QMainWindow):
         self._settings.setValue(
             "recent_expressions",
             [self.history_combo.itemText(i) for i in range(self.history_combo.count())],
+        )
+        self._settings.setValue(
+            "curve_list",
+            [self.curve_list.item(i).text() for i in range(self.curve_list.count())],
         )
         self._settings.sync()
 
