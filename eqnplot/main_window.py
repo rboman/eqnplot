@@ -34,6 +34,7 @@ DEFAULT_SHOW_GRID = True
 DEFAULT_SHOW_AXIS_LABELS = True
 DEFAULT_OPTIMIZED_RENDER = False
 DEFAULT_PALETTE = "Light"
+MAX_HISTORY_ITEMS = 10
 
 PALETTES = {
     "Light": {
@@ -95,6 +96,10 @@ class MainWindow(QMainWindow):
         form_group = QGroupBox("Equation")
         form_layout = QFormLayout(form_group)
 
+        self.history_combo = QComboBox()
+        self.history_combo.setToolTip("Retrouve rapidement une equation recente.")
+        self.history_combo.currentTextChanged.connect(self._apply_history_expression)
+
         self.expression_input = QLineEdit(DEFAULT_EXPRESSION)
         self.expression_input.setPlaceholderText("Ex: sin(x) ou x**2")
         self.expression_input.setToolTip(
@@ -103,6 +108,7 @@ class MainWindow(QMainWindow):
         self.expression_input.editingFinished.connect(self.plot_expression)
         self.expression_input.returnPressed.connect(self.plot_expression)
         form_layout.addRow("y =", self.expression_input)
+        form_layout.addRow("Recents", self.history_combo)
 
         self.x_min_input = QLineEdit(DEFAULT_X_MIN)
         self.x_max_input = QLineEdit(DEFAULT_X_MAX)
@@ -112,8 +118,12 @@ class MainWindow(QMainWindow):
         self.x_min_input.returnPressed.connect(self.plot_expression)
         self.x_max_input.editingFinished.connect(self.plot_expression)
         self.x_max_input.returnPressed.connect(self.plot_expression)
+        self.expression_help_button = QPushButton("Aide expressions")
+        self.expression_help_button.setToolTip("Affiche les expressions, constantes et fonctions supportees.")
+        self.expression_help_button.clicked.connect(self.show_expression_help)
         form_layout.addRow("x min", self.x_min_input)
         form_layout.addRow("x max", self.x_max_input)
+        form_layout.addRow("", self.expression_help_button)
 
         display_group = QGroupBox("Affichage")
         display_layout = QVBoxLayout(display_group)
@@ -183,15 +193,19 @@ class MainWindow(QMainWindow):
 
         actions_layout = QHBoxLayout()
         self.default_button = QPushButton("Default")
+        self.reset_view_button = QPushButton("Reset View")
         self.about_button = QPushButton("About")
         self.save_button = QPushButton("Capture")
         self.default_button.setToolTip("Remet tous les parametres aux valeurs par defaut.")
+        self.reset_view_button.setToolTip("Revient a la derniere vue de base du trace courant.")
         self.about_button.setToolTip("Affiche les informations et credits de l'application.")
         self.save_button.setToolTip("Enregistre l'image courante du graphe au format PNG.")
         self.default_button.clicked.connect(self.reset_to_defaults)
+        self.reset_view_button.clicked.connect(self.reset_view)
         self.about_button.clicked.connect(self.show_about_dialog)
         self.save_button.clicked.connect(self.save_plot)
         actions_layout.addWidget(self.default_button)
+        actions_layout.addWidget(self.reset_view_button)
         actions_layout.addWidget(self.about_button)
         actions_layout.addWidget(self.save_button)
 
@@ -336,6 +350,7 @@ class MainWindow(QMainWindow):
 
         self.plot_widget.set_plot(plot_function, options)
         self.status_label.setText(f"Trace de y = {options.expression} sur [{options.x_min}, {options.x_max}]")
+        self._remember_expression(options.expression)
         self._save_settings()
 
     def save_plot(self) -> None:
@@ -385,6 +400,33 @@ class MainWindow(QMainWindow):
     def _sync_cursor_value(self, text: str) -> None:
         self.cursor_value_label.setText(text)
 
+    def _remember_expression(self, expression: str) -> None:
+        expression = expression.strip()
+        if not expression:
+            return
+        items = [self.history_combo.itemText(i) for i in range(self.history_combo.count())]
+        items = [item for item in items if item != expression]
+        items.insert(0, expression)
+        self._set_history_items(items[:MAX_HISTORY_ITEMS])
+
+    def _set_history_items(self, items) -> None:
+        previous = self.history_combo.blockSignals(True)
+        try:
+            self.history_combo.clear()
+            for item in items:
+                self.history_combo.addItem(item)
+            if items:
+                self.history_combo.setCurrentIndex(0)
+        finally:
+            self.history_combo.blockSignals(previous)
+
+    def _apply_history_expression(self, expression: str) -> None:
+        expression = expression.strip()
+        if not expression or expression == self.expression_input.text().strip():
+            return
+        self.expression_input.setText(expression)
+        self.plot_expression()
+
     def show_about_dialog(self) -> None:
         QMessageBox.about(
             self,
@@ -394,8 +436,33 @@ class MainWindow(QMainWindow):
             "Conception et implementation: OpenAI Codex.",
         )
 
+    def show_expression_help(self) -> None:
+        QMessageBox.information(
+            self,
+            "Expressions supportees",
+            "Variable:\n"
+            "x\n\n"
+            "Operateurs:\n"
+            "+   -   *   /   **   %\n\n"
+            "Constantes:\n"
+            "pi, e\n\n"
+            "Fonctions:\n"
+            "sin, cos, tan, asin, acos, atan,\n"
+            "sinh, cosh, tanh, exp, log, log10,\n"
+            "sqrt, fabs, floor, ceil\n\n"
+            "Exemples:\n"
+            "sin(x)\n"
+            "x**2 - 4*x + 1\n"
+            "sqrt(x)\n"
+            "exp(-x**2)",
+        )
+
+    def reset_view(self) -> None:
+        self.plot_widget.reset_view()
+
     def reset_to_defaults(self) -> None:
         widgets = [
+            self.history_combo,
             self.expression_input,
             self.x_min_input,
             self.x_max_input,
@@ -421,6 +488,7 @@ class MainWindow(QMainWindow):
             self._custom_axis_color = PALETTES[DEFAULT_PALETTE]["axis"]
             self._custom_grid_color = PALETTES[DEFAULT_PALETTE]["grid"]
             self._set_custom_color_controls_enabled(False)
+            self._set_history_items([DEFAULT_EXPRESSION])
             self.cursor_value_label.clear()
         finally:
             for widget, previous_state in previous_states:
@@ -430,6 +498,7 @@ class MainWindow(QMainWindow):
 
     def _load_settings(self) -> None:
         widgets = [
+            self.history_combo,
             self.expression_input,
             self.x_min_input,
             self.x_max_input,
@@ -457,6 +526,11 @@ class MainWindow(QMainWindow):
                 self._settings.value("use_optimized_render", DEFAULT_OPTIMIZED_RENDER, type=bool)
             )
             self.palette_combo.setCurrentText(palette_name)
+            history_raw = self._settings.value("recent_expressions", [], type=list)
+            history = [item for item in history_raw if isinstance(item, str) and item.strip()]
+            if not history:
+                history = [self.expression_input.text().strip() or DEFAULT_EXPRESSION]
+            self._set_history_items(history[:MAX_HISTORY_ITEMS])
 
             if palette_name == "Custom":
                 self._custom_background_color = self._settings.value("custom_background_color", "#ffffff", type=str)
@@ -506,6 +580,10 @@ class MainWindow(QMainWindow):
         self._settings.setValue("custom_curve_color", self._custom_curve_color)
         self._settings.setValue("custom_axis_color", self._custom_axis_color)
         self._settings.setValue("custom_grid_color", self._custom_grid_color)
+        self._settings.setValue(
+            "recent_expressions",
+            [self.history_combo.itemText(i) for i in range(self.history_combo.count())],
+        )
         self._settings.sync()
 
 

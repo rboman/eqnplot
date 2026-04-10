@@ -28,6 +28,7 @@ class PlotWidget(QWidget):
         self.setMinimumSize(640, 420)
         self._plot_options: Optional[PlotOptions] = None
         self._plot_function: Optional[Callable[[float], float]] = None
+        self._base_x_range: Optional[Tuple[float, float]] = None
         self._status_message = "Saisissez une equation puis cliquez sur Tracer."
         self._dragging = False
         self._last_drag_pos: Optional[QPoint] = None
@@ -40,6 +41,7 @@ class PlotWidget(QWidget):
     def set_plot(self, plot_function: Callable[[float], float], options: PlotOptions) -> None:
         self._plot_function = plot_function
         self._plot_options = options
+        self._base_x_range = (options.x_min, options.x_max)
         self._status_message = ""
         self._hover_pos = None
         self._invalidate_render_cache()
@@ -48,6 +50,7 @@ class PlotWidget(QWidget):
     def clear_plot(self, message: str) -> None:
         self._plot_function = None
         self._plot_options = None
+        self._base_x_range = None
         self._status_message = message
         self._hover_pos = None
         self._invalidate_render_cache()
@@ -72,6 +75,11 @@ class PlotWidget(QWidget):
         if self._plot_options is None:
             return None
         return (self._plot_options.x_min, self._plot_options.x_max)
+
+    def reset_view(self) -> None:
+        if self._base_x_range is None:
+            return
+        self._set_x_range(self._base_x_range[0], self._base_x_range[1])
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
