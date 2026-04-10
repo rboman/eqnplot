@@ -215,6 +215,8 @@ class PlotWidget(QWidget):
             self._draw_axis_labels(painter, plot_rect, y_min, y_max)
 
         self._draw_curves(painter, plot_rect, samples_by_curve, y_min, y_max)
+        if self._plot_options.show_legend:
+            self._draw_legend(painter, plot_rect)
         self._draw_hover_indicator(painter, plot_rect, y_min, y_max)
         painter.setPen(accent_color)
         painter.setBrush(Qt.NoBrush)
@@ -658,6 +660,65 @@ class PlotWidget(QWidget):
             painter.setPen(QPen(QColor(self._plot_options.curves[index - 1].color), 1))
             painter.setBrush(QColor(self._plot_options.curves[index - 1].color))
             painter.drawEllipse(bullet_center, bullet_size / 2, bullet_size / 2)
+
+        painter.restore()
+
+    def _draw_legend(self, painter: QPainter, plot_rect: QRectF) -> None:
+        assert self._plot_options is not None
+        if not self._plot_options.curves:
+            return
+
+        font_metrics = painter.fontMetrics()
+        padding_x = 10
+        padding_y = 8
+        bullet_size = 10
+        bullet_gap = 8
+        line_height = font_metrics.height()
+        lines = [curve.expression for curve in self._plot_options.curves]
+        content_width = max(font_metrics.horizontalAdvance(line) for line in lines)
+        box_width = padding_x * 2 + bullet_size + bullet_gap + content_width
+        box_height = padding_y * 2 + len(lines) * line_height
+
+        box_rect = QRectF(
+            plot_rect.right() - box_width - 10,
+            plot_rect.top() + 10,
+            box_width,
+            box_height,
+        )
+
+        background = QColor(self._plot_options.background_color)
+        background.setAlpha(225)
+        border_color = QColor(self._plot_options.axis_color)
+
+        painter.save()
+        painter.setPen(QPen(border_color, 1))
+        painter.setBrush(background)
+        painter.drawRoundedRect(box_rect, 6, 6)
+        painter.setBrush(Qt.NoBrush)
+
+        text_x = box_rect.left() + padding_x + bullet_size + bullet_gap
+        first_baseline = box_rect.top() + padding_y + font_metrics.ascent()
+        for index, curve in enumerate(self._plot_options.curves):
+            baseline_y = first_baseline + index * line_height
+            bullet_rect = QRectF(
+                box_rect.left() + padding_x,
+                baseline_y - font_metrics.ascent() + max(0, (line_height - bullet_size) / 2),
+                bullet_size,
+                bullet_size,
+            )
+            painter.setPen(QPen(QColor(curve.color), 1))
+            painter.setBrush(QColor(curve.color))
+            painter.drawRect(bullet_rect)
+
+            painter.setPen(border_color)
+            painter.setBrush(Qt.NoBrush)
+            text_rect = QRectF(
+                text_x,
+                baseline_y - font_metrics.ascent(),
+                content_width,
+                line_height,
+            )
+            painter.drawText(text_rect, Qt.AlignLeft | Qt.AlignVCenter, curve.expression)
 
         painter.restore()
 

@@ -15,6 +15,7 @@ class PlotOptions:
     show_axes: bool = True
     show_grid: bool = True
     show_axis_labels: bool = True
+    show_legend: bool = True
     use_optimized_render: bool = True
     background_color: str = "#ffffff"
     axis_color: str = "#222222"

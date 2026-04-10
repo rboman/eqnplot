@@ -36,10 +36,18 @@ DEFAULT_X_MAX = "10"
 DEFAULT_SHOW_AXES = True
 DEFAULT_SHOW_GRID = True
 DEFAULT_SHOW_AXIS_LABELS = True
+DEFAULT_SHOW_LEGEND = True
 DEFAULT_OPTIMIZED_RENDER = False
 DEFAULT_PALETTE = "Light"
 MAX_HISTORY_ITEMS = 10
 APP_ID = "OpenAI.Codex.EqnPlot"
+DEFAULT_RECENT_EXPRESSIONS = [
+    "sin(x)",
+    "cos(x) * exp(-x**2 / 18)",
+    "sin(3*x) / (1 + x**2 / 10)",
+    "exp(-x**2 / 12) * (sin(4*x) + cos(2*x))",
+    "sqrt(fabs(x)) * sin(2*x)",
+]
 LIGHT_CURVE_COLORS = [
     "#d1495b",
     "#2563eb",
@@ -198,6 +206,9 @@ class MainWindow(QMainWindow):
         self.axis_labels_checkbox = QCheckBox("Afficher les valeurs des axes")
         self.axis_labels_checkbox.setChecked(DEFAULT_SHOW_AXIS_LABELS)
         self.axis_labels_checkbox.setToolTip("Affiche les graduations numeriques sur les axes.")
+        self.legend_checkbox = QCheckBox("Afficher la legende")
+        self.legend_checkbox.setChecked(DEFAULT_SHOW_LEGEND)
+        self.legend_checkbox.setToolTip("Affiche un rappel colore des courbes dans le graphe.")
         self.optimized_render_checkbox = QCheckBox("Mode optimise (plus rapide)")
         self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
         self.optimized_render_checkbox.setToolTip(
@@ -206,10 +217,12 @@ class MainWindow(QMainWindow):
         self.axes_checkbox.toggled.connect(self.plot_expression)
         self.grid_checkbox.toggled.connect(self.plot_expression)
         self.axis_labels_checkbox.toggled.connect(self.plot_expression)
+        self.legend_checkbox.toggled.connect(self.plot_expression)
         self.optimized_render_checkbox.toggled.connect(self.plot_expression)
         display_layout.addWidget(self.axes_checkbox)
         display_layout.addWidget(self.grid_checkbox)
         display_layout.addWidget(self.axis_labels_checkbox)
+        display_layout.addWidget(self.legend_checkbox)
         display_layout.addWidget(self.optimized_render_checkbox)
 
         color_group = QGroupBox("Couleurs")
@@ -537,6 +550,7 @@ class MainWindow(QMainWindow):
             show_axes=self.axes_checkbox.isChecked(),
             show_grid=self.grid_checkbox.isChecked(),
             show_axis_labels=self.axis_labels_checkbox.isChecked(),
+            show_legend=self.legend_checkbox.isChecked(),
             use_optimized_render=self.optimized_render_checkbox.isChecked(),
             background_color=self._background_color,
             axis_color=self._axis_color,
@@ -679,6 +693,7 @@ class MainWindow(QMainWindow):
             self.axes_checkbox,
             self.grid_checkbox,
             self.axis_labels_checkbox,
+            self.legend_checkbox,
             self.optimized_render_checkbox,
             self.palette_combo,
         ]
@@ -690,6 +705,7 @@ class MainWindow(QMainWindow):
             self.axes_checkbox.setChecked(DEFAULT_SHOW_AXES)
             self.grid_checkbox.setChecked(DEFAULT_SHOW_GRID)
             self.axis_labels_checkbox.setChecked(DEFAULT_SHOW_AXIS_LABELS)
+            self.legend_checkbox.setChecked(DEFAULT_SHOW_LEGEND)
             self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
             self.palette_combo.setCurrentText(DEFAULT_PALETTE)
             self._apply_palette(DEFAULT_PALETTE, trigger_redraw=False)
@@ -699,7 +715,7 @@ class MainWindow(QMainWindow):
             self._custom_grid_color = PALETTES[DEFAULT_PALETTE]["grid"]
             self._custom_curve_colors = []
             self._set_custom_color_controls_enabled(False)
-            self._set_history_items([DEFAULT_EXPRESSION])
+            self._set_history_items(DEFAULT_RECENT_EXPRESSIONS)
         finally:
             for widget, previous_state in previous_states:
                 widget.blockSignals(previous_state)
@@ -716,6 +732,7 @@ class MainWindow(QMainWindow):
             self.axes_checkbox,
             self.grid_checkbox,
             self.axis_labels_checkbox,
+            self.legend_checkbox,
             self.optimized_render_checkbox,
             self.palette_combo,
         ]
@@ -733,6 +750,9 @@ class MainWindow(QMainWindow):
             self.axis_labels_checkbox.setChecked(
                 self._settings.value("show_axis_labels", DEFAULT_SHOW_AXIS_LABELS, type=bool)
             )
+            self.legend_checkbox.setChecked(
+                self._settings.value("show_legend", DEFAULT_SHOW_LEGEND, type=bool)
+            )
             self.optimized_render_checkbox.setChecked(
                 self._settings.value("use_optimized_render", DEFAULT_OPTIMIZED_RENDER, type=bool)
             )
@@ -747,8 +767,8 @@ class MainWindow(QMainWindow):
             history_raw = self._settings.value("recent_expressions", [], type=list)
             history = [item for item in history_raw if isinstance(item, str) and item.strip()]
             if not history:
-                history = [self.expression_input.text().strip() or DEFAULT_EXPRESSION]
-            self._set_history_items(history[:MAX_HISTORY_ITEMS])
+                history = list(DEFAULT_RECENT_EXPRESSIONS)
+            self._set_history_items(self._merge_recent_defaults(history))
 
             if palette_name == "Custom":
                 self._custom_background_color = self._settings.value("custom_background_color", "#ffffff", type=str)
@@ -785,6 +805,7 @@ class MainWindow(QMainWindow):
         self._settings.setValue("show_axes", self.axes_checkbox.isChecked())
         self._settings.setValue("show_grid", self.grid_checkbox.isChecked())
         self._settings.setValue("show_axis_labels", self.axis_labels_checkbox.isChecked())
+        self._settings.setValue("show_legend", self.legend_checkbox.isChecked())
         self._settings.setValue("use_optimized_render", self.optimized_render_checkbox.isChecked())
         self._settings.setValue("palette", self.palette_combo.currentText())
         self._settings.setValue("background_color", self._background_color)
@@ -803,6 +824,14 @@ class MainWindow(QMainWindow):
             [self.curve_list.item(i).text() for i in range(self.curve_list.count())],
         )
         self._settings.sync()
+
+    def _merge_recent_defaults(self, items: Sequence[str]) -> List[str]:
+        merged: List[str] = []
+        for expression in list(items) + DEFAULT_RECENT_EXPRESSIONS:
+            expression = expression.strip()
+            if expression and expression not in merged:
+                merged.append(expression)
+        return merged[:MAX_HISTORY_ITEMS]
 
 
 def run() -> None:
