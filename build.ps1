@@ -1,5 +1,6 @@
 param(
-    [switch]$OneFile
+    [switch]$OneFile,
+    [switch]$Upx
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,5 +15,8 @@ if (-not (Test-Path $PythonExe)) {
 $args = @("build.py")
 if ($OneFile) {
     $args += "--onefile"
+}
+if ($Upx) {
+    $args += "--upx"
 }
 & $PythonExe @args | Out-Host

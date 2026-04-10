@@ -21,6 +21,7 @@ def run(command: list[str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cross-platform PyInstaller build helper for EqnPlot.")
     parser.add_argument("--onefile", action="store_true", help="Build a single-file executable.")
+    parser.add_argument("--upx", action="store_true", help="Enable UPX compression.")
     args = parser.parse_args()
 
     python_exe = venv_python()
@@ -49,14 +50,25 @@ def main() -> None:
             "--name",
             "EqnPlot",
             "--onefile",
+            "--specpath",
+            "build",
         ]
+        if not args.upx:
+            command.append("--noupx")
         if icon_path.exists():
             command += ["--icon", str(icon_path), "--add-data", f"{icon_path}{data_separator}assets"]
         command.append("main.py")
         run(command)
     else:
         print("Running PyInstaller with EqnPlot.spec...")
-        run([str(python_exe), "-m", "PyInstaller", "--noconfirm", "--clean", "EqnPlot.spec"])
+        env = os.environ.copy()
+        env["EQNPLOT_USE_UPX"] = "1" if args.upx else "0"
+        subprocess.run(
+            [str(python_exe), "-m", "PyInstaller", "--noconfirm", "--clean", "EqnPlot.spec"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            env=env,
+        )
 
     print("Build complete. Output is in dist/")
 

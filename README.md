@@ -75,7 +75,15 @@ Single executable:
 .\build.ps1 -OneFile
 ```
 
+Enable UPX only when you explicitly want it:
+
+```powershell
+.\build.ps1 -Upx
+.\build.ps1 -OneFile -Upx
+```
+
 The folder build produces `dist/EqnPlot/EqnPlot.exe`.
+This is now a true `onedir` build: the executable is placed inside a `dist/EqnPlot/` folder with its companion files.
 
 ### Cross-platform build
 
@@ -84,6 +92,8 @@ The project now includes a portable build helper:
 ```bash
 python build.py
 python build.py --onefile
+python build.py --upx
+python build.py --onefile --upx
 ```
 
 This helper:
@@ -92,8 +102,10 @@ This helper:
 - uses `.venv/bin/python` on Linux and macOS
 - uses only relative paths
 - chooses the correct PyInstaller data separator automatically
+- keeps UPX disabled by default
 
 The PyInstaller spec also uses relative paths now, so the project can be moved to another machine or folder without edits.
+The checked-in `EqnPlot.spec` is still useful: it defines the normal `onedir` build. The `onefile` build is generated directly from `main.py`, but now writes any temporary spec into `build/` so it no longer overwrites the project spec.
 
 ### If PowerShell blocks scripts
 

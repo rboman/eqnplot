@@ -1,10 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 from pathlib import Path
 
 
 PROJECT_ROOT = Path.cwd()
 ICON_PATH = PROJECT_ROOT / "assets" / "eqnplot-icon.ico"
+USE_UPX = os.environ.get("EQNPLOT_USE_UPX", "").lower() in {"1", "true", "yes", "on"}
 
 
 a = Analysis(
@@ -25,14 +27,13 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="EqnPlot",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=USE_UPX,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -42,4 +43,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=[str(ICON_PATH)] if ICON_PATH.exists() else None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=USE_UPX,
+    upx_exclude=[],
+    name="EqnPlot",
 )
