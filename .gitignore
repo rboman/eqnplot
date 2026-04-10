@@ -20,7 +20,9 @@ htmlcov/
 # Build artifacts
 build/
 dist/
+installer-output/
 *.egg-info/
+*.spec.bak
 
 # IDE and editor settings
 .idea/
@@ -33,5 +35,9 @@ Thumbs.db
 # Local smoke-test artifacts
 smoke_export.png
 tmp*.png
+
+# PyInstaller
+*.manifest
+*.pkg
 
 *.png

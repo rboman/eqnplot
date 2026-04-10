@@ -54,3 +54,68 @@ Exemples:
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+## Distribution Windows
+
+### Build executable
+
+Mode dossier recommande:
+
+```powershell
+.\build.ps1
+```
+
+Mode executable unique:
+
+```powershell
+.\build.ps1 -OneFile
+```
+
+Le mode dossier produit `dist\EqnPlot\EqnPlot.exe`.
+
+### PyInstaller manuel
+
+```powershell
+pip install pyinstaller
+pyinstaller --noconfirm --clean EqnPlot.spec
+```
+
+### Si PowerShell bloque les scripts
+
+Selon la configuration Windows, PowerShell peut refuser `Activate.ps1` ou `build.ps1` avec un message du type `running scripts is disabled on this system`.
+
+Le plus simple est d'autoriser les scripts uniquement pour la session en cours:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\build.ps1
+```
+
+Ou en une seule commande:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+Pour le mode `onefile`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -OneFile
+```
+
+Note: il n'est pas necessaire d'activer manuellement le virtualenv pour utiliser `build.ps1`, car le script appelle directement `.\.venv\Scripts\python.exe`.
+
+### Installateur Windows
+
+Le fichier [installer.iss](D:/dev/VIBECODING/eqnplot/installer.iss) est prevu pour Inno Setup.
+
+1. Installer Inno Setup
+2. Generer d'abord `dist\EqnPlot\`
+3. Ouvrir `installer.iss` dans Inno Setup
+4. Compiler l'installateur
+
+Le resultat sera genere dans `installer-output\`.
+
+### Icone
+
+L'icone Windows utilisee par defaut est `assets\eqnplot-icon.ico`.
