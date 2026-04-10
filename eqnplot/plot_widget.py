@@ -1,7 +1,8 @@
 import math
+from dataclasses import replace
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from PyQt5.QtCore import QPointF, QRectF, Qt
+from PyQt5.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QWidget
 
@@ -12,12 +13,18 @@ PointData = Tuple[float, Optional[float]]
 
 
 class PlotWidget(QWidget):
+    viewport_changed = pyqtSignal(float, float)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(640, 420)
         self._plot_options: Optional[PlotOptions] = None
         self._plot_function: Optional[Callable[[float], float]] = None
         self._status_message = "Saisissez une equation puis cliquez sur Tracer."
+        self._dragging = False
+        self._last_drag_pos: Optional[QPoint] = None
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CrossCursor)
 
     def set_plot(self, plot_function: Callable[[float], float], options: PlotOptions) -> None:
         self._plot_function = plot_function
@@ -44,12 +51,95 @@ class PlotWidget(QWidget):
     def has_plot(self) -> bool:
         return self._plot_function is not None and self._plot_options is not None
 
+    def current_x_range(self) -> Optional[Tuple[float, float]]:
+        if self._plot_options is None:
+            return None
+        return (self._plot_options.x_min, self._plot_options.x_max)
+
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
         try:
             self._paint_contents(painter)
         finally:
             painter.end()
+
+    def mousePressEvent(self, event):  # noqa: N802
+        if (
+            event.button() == Qt.LeftButton
+            and self.has_plot()
+            and self._plot_area().contains(event.pos())
+        ):
+            self._dragging = True
+            self._last_drag_pos = event.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        if self._dragging and self._last_drag_pos is not None and self._plot_options is not None:
+            plot_rect = self._plot_area()
+            if plot_rect.width() <= 0:
+                return
+            delta_pixels = event.pos().x() - self._last_drag_pos.x()
+            if delta_pixels != 0:
+                x_span = self._plot_options.x_max - self._plot_options.x_min
+                delta_x = (delta_pixels / plot_rect.width()) * x_span
+                self._set_x_range(
+                    self._plot_options.x_min - delta_x,
+                    self._plot_options.x_max - delta_x,
+                )
+                self._last_drag_pos = event.pos()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if event.button() == Qt.LeftButton and self._dragging:
+            self._dragging = False
+            self._last_drag_pos = None
+            self.setCursor(Qt.CrossCursor)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        if not self._dragging:
+            self.setCursor(Qt.CrossCursor)
+        super().leaveEvent(event)
+
+    def wheelEvent(self, event):  # noqa: N802
+        if not self.has_plot() or self._plot_options is None:
+            super().wheelEvent(event)
+            return
+
+        plot_rect = self._plot_area()
+        if not plot_rect.contains(event.pos()):
+            super().wheelEvent(event)
+            return
+
+        angle_delta = event.angleDelta().y()
+        if angle_delta == 0 or plot_rect.width() <= 0:
+            event.accept()
+            return
+
+        zoom_factor = 0.85 if angle_delta > 0 else 1.15
+        x_min = self._plot_options.x_min
+        x_max = self._plot_options.x_max
+        x_span = x_max - x_min
+        cursor_ratio = (event.pos().x() - plot_rect.left()) / plot_rect.width()
+        cursor_ratio = min(max(cursor_ratio, 0.0), 1.0)
+        anchor_x = x_min + cursor_ratio * x_span
+
+        new_span = x_span * zoom_factor
+        min_span = 1e-6
+        max_span = 1e9
+        new_span = min(max(new_span, min_span), max_span)
+
+        new_x_min = anchor_x - cursor_ratio * new_span
+        new_x_max = new_x_min + new_span
+        self._set_x_range(new_x_min, new_x_max)
+        event.accept()
 
     def _paint_contents(self, painter: QPainter) -> None:
         painter.setRenderHint(QPainter.Antialiasing, True)
@@ -61,7 +151,7 @@ class PlotWidget(QWidget):
             painter.drawText(rect, Qt.AlignCenter, self._status_message)
             return
 
-        plot_rect = rect.adjusted(18, 18, -18, -18)
+        plot_rect = self._plot_area()
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             return
 
@@ -93,6 +183,18 @@ class PlotWidget(QWidget):
         self._draw_curve(painter, plot_rect, samples, y_min, y_max)
         painter.setPen(QColor("#444444"))
         painter.drawRect(plot_rect)
+
+    def _plot_area(self) -> QRectF:
+        return self.rect().adjusted(18, 18, -18, -18)
+
+    def _set_x_range(self, x_min: float, x_max: float) -> None:
+        if self._plot_options is None:
+            return
+        if not math.isfinite(x_min) or not math.isfinite(x_max) or x_min >= x_max:
+            return
+        self._plot_options = replace(self._plot_options, x_min=x_min, x_max=x_max)
+        self.viewport_changed.emit(x_min, x_max)
+        self.update()
 
     def _sample_points(self, pixel_width: int) -> List[PointData]:
         assert self._plot_function is not None

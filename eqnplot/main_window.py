@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
 
         control_panel = self._build_controls()
         self.plot_widget = PlotWidget()
+        self.plot_widget.viewport_changed.connect(self._sync_range_inputs)
 
         layout.addWidget(control_panel, 0)
         layout.addWidget(self.plot_widget, 1)
@@ -213,6 +214,14 @@ class MainWindow(QMainWindow):
             "}"
         )
         button.setText(color_hex)
+
+    def _sync_range_inputs(self, x_min: float, x_max: float) -> None:
+        self.x_min_input.setText(f"{x_min:.6g}")
+        self.x_max_input.setText(f"{x_max:.6g}")
+        if self.expression_input.text().strip():
+            self.status_label.setText(
+                f"Trace de y = {self.expression_input.text().strip()} sur [{x_min:.6g}, {x_max:.6g}]"
+            )
 
 
 def run() -> None:
