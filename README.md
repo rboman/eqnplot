@@ -123,3 +123,8 @@ Le resultat sera genere dans `installer-output\`.
 ### Icone
 
 L'icone Windows utilisee par defaut est `assets\eqnplot-icon.ico`.
+
+Elle est maintenant:
+
+- injectee dans l'executable Windows via `--icon`
+- embarquee aussi comme ressource de l'application PyQt pour que l'icone apparaisse correctement dans la fenetre et la barre des taches, y compris en build PyInstaller

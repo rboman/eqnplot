@@ -64,7 +64,7 @@ class PlotWidgetTests(unittest.TestCase):
         widget._emit_cursor_value()
 
         self.assertTrue(captured)
-        self.assertIn("indefini", captured[-1])
+        self.assertIn("undefined", captured[-1])
         widget.close()
         widget.deleteLater()
 

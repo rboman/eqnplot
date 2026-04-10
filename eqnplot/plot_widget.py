@@ -29,7 +29,7 @@ class PlotWidget(QWidget):
         self._plot_options: Optional[PlotOptions] = None
         self._plot_functions: list[Callable[[float], float]] = []
         self._base_x_range: Optional[Tuple[float, float]] = None
-        self._status_message = "Saisissez une equation pour commencer."
+        self._status_message = "Enter an equation to begin."
         self._dragging = False
         self._last_drag_pos: Optional[QPoint] = None
         self._hover_pos: Optional[QPoint] = None
@@ -199,7 +199,7 @@ class PlotWidget(QWidget):
         render_data = self._get_render_data(plot_rect)
         if render_data is None:
             painter.setPen(QColor("#aa0000"))
-            painter.drawText(rect, Qt.AlignCenter, "Aucune valeur exploitable sur cet intervalle.")
+            painter.drawText(rect, Qt.AlignCenter, "No usable values on this interval.")
             return
         samples_by_curve = render_data.samples_by_curve
         y_min = render_data.y_min
@@ -217,7 +217,8 @@ class PlotWidget(QWidget):
         self._draw_curves(painter, plot_rect, samples_by_curve, y_min, y_max)
         if self._plot_options.show_legend:
             self._draw_legend(painter, plot_rect)
-        self._draw_hover_indicator(painter, plot_rect, y_min, y_max)
+        if self._plot_options.show_hover_values:
+            self._draw_hover_indicator(painter, plot_rect, y_min, y_max)
         painter.setPen(accent_color)
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(plot_rect)
@@ -604,7 +605,7 @@ class PlotWidget(QWidget):
                     raise ValueError
                 lines.append(f"{curve_spec.expression} = {y_value:.6g}")
             except (ValueError, ZeroDivisionError, OverflowError):
-                lines.append(f"{curve_spec.expression} = indefini")
+                lines.append(f"{curve_spec.expression} = undefined")
 
         font_metrics = painter.fontMetrics()
         line_height = font_metrics.height()
@@ -797,7 +798,7 @@ class PlotWidget(QWidget):
                     raise ValueError
                 values.append(f"{label} = {y_value:.6g}")
             except (ValueError, ZeroDivisionError, OverflowError):
-                values.append(f"{label} = indefini")
+                values.append(f"{label} = undefined")
         self.cursor_value_changed.emit("    ".join(values))
 
     @staticmethod

@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('D:\\dev\\VIBECODING\\eqnplot\\assets\\eqnplot-icon.ico', 'assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

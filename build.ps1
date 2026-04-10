@@ -31,6 +31,7 @@ if ($OneFile) {
     )
     if (Test-Path $iconPath) {
         $args += @("--icon", $iconPath)
+        $args += @("--add-data", "$iconPath;assets")
     }
     $args += "main.py"
     & $PythonExe @args | Out-Host

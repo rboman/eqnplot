@@ -95,7 +95,7 @@ class ExpressionParser:
             if len(node.keywords) != 0:
                 raise ExpressionError("Les arguments nommes ne sont pas autorises.")
             if len(node.args) != 1:
-                raise ExpressionError("Les fonctions doivent avoir un seul argument.")
+                raise ExpressionError("Functions must have a single argument.")
             self._validate(node.args[0])
             return
 
@@ -106,7 +106,7 @@ class ExpressionParser:
 
         if isinstance(node, ast.Constant):
             if not isinstance(node.value, (int, float)):
-                raise ExpressionError("Seules les constantes numeriques sont autorisees.")
+                raise ExpressionError("Only numeric constants are allowed.")
             return
 
         if hasattr(ast, "Num") and isinstance(node, ast.Num):

@@ -37,6 +37,7 @@ DEFAULT_SHOW_AXES = True
 DEFAULT_SHOW_GRID = True
 DEFAULT_SHOW_AXIS_LABELS = True
 DEFAULT_SHOW_LEGEND = True
+DEFAULT_SHOW_HOVER_VALUES = True
 DEFAULT_OPTIMIZED_RENDER = False
 DEFAULT_PALETTE = "Light"
 MAX_HISTORY_ITEMS = 10
@@ -136,36 +137,36 @@ class MainWindow(QMainWindow):
         form_layout = QFormLayout(form_group)
 
         self.history_combo = QComboBox()
-        self.history_combo.setToolTip("Retrouve rapidement une equation recente.")
+        self.history_combo.setToolTip("Quickly reopen a recent equation.")
         self.history_combo.currentTextChanged.connect(self._apply_history_expression)
 
         self.expression_input = QLineEdit(DEFAULT_EXPRESSION)
-        self.expression_input.setPlaceholderText("Ex: sin(x) ou x**2")
+        self.expression_input.setPlaceholderText("Example: sin(x) or x**2")
         self.expression_input.setToolTip(
-            "Entrez une expression en fonction de x, par exemple sin(x), x**2 ou exp(-x**2)."
+            "Enter an expression in x, for example sin(x), x**2 or exp(-x**2)."
         )
         self.expression_input.editingFinished.connect(self.plot_expression)
         self.expression_input.returnPressed.connect(self.plot_expression)
         form_layout.addRow("y =", self.expression_input)
-        form_layout.addRow("Recents", self.history_combo)
+        form_layout.addRow("Recent", self.history_combo)
 
         self.curve_list = QListWidget()
         self.curve_list.setToolTip(
-            "Liste des courbes affichees. En mode Custom, double-cliquez une courbe pour changer sa couleur."
+            "List of displayed curves. In Custom mode, double-click a curve to change its color."
         )
         self.curve_list.currentTextChanged.connect(self._load_selected_curve)
         self.curve_list.itemDoubleClicked.connect(self._edit_curve_color)
-        self.add_curve_button = QPushButton("Ajouter")
-        self.add_curve_button.setToolTip("Ajoute l'expression courante a la liste des courbes.")
+        self.add_curve_button = QPushButton("Add")
+        self.add_curve_button.setToolTip("Add the current expression to the curve list.")
         self.add_curve_button.clicked.connect(self.add_curve)
-        self.update_curve_button = QPushButton("Mettre a jour")
-        self.update_curve_button.setToolTip("Remplace la courbe selectionnee par l'expression courante.")
+        self.update_curve_button = QPushButton("Update")
+        self.update_curve_button.setToolTip("Replace the selected curve with the current expression.")
         self.update_curve_button.clicked.connect(self.update_selected_curve)
-        self.remove_curve_button = QPushButton("Supprimer")
-        self.remove_curve_button.setToolTip("Supprime la courbe selectionnee.")
+        self.remove_curve_button = QPushButton("Remove")
+        self.remove_curve_button.setToolTip("Remove the selected curve.")
         self.remove_curve_button.clicked.connect(self.remove_selected_curve)
-        self.clear_curves_button = QPushButton("Vider")
-        self.clear_curves_button.setToolTip("Vide toute la liste de courbes.")
+        self.clear_curves_button = QPushButton("Clear")
+        self.clear_curves_button.setToolTip("Clear the whole curve list.")
         self.clear_curves_button.clicked.connect(self.clear_curves)
 
         curve_actions_layout = QGridLayout()
@@ -176,78 +177,85 @@ class MainWindow(QMainWindow):
         curve_actions_layout.addWidget(self.remove_curve_button, 1, 0)
         curve_actions_layout.addWidget(self.clear_curves_button, 1, 1)
 
-        form_layout.addRow("Courbes", self.curve_list)
+        form_layout.addRow("Curves", self.curve_list)
         form_layout.addRow("", curve_actions_layout)
 
         self.x_min_input = QLineEdit(DEFAULT_X_MIN)
         self.x_max_input = QLineEdit(DEFAULT_X_MAX)
-        self.x_min_input.setToolTip("Borne minimale de l'intervalle de trace sur l'axe X.")
-        self.x_max_input.setToolTip("Borne maximale de l'intervalle de trace sur l'axe X.")
+        self.x_min_input.setToolTip("Minimum bound of the plotted X range.")
+        self.x_max_input.setToolTip("Maximum bound of the plotted X range.")
         self.x_min_input.editingFinished.connect(self.plot_expression)
         self.x_min_input.returnPressed.connect(self.plot_expression)
         self.x_max_input.editingFinished.connect(self.plot_expression)
         self.x_max_input.returnPressed.connect(self.plot_expression)
-        self.expression_help_button = QPushButton("Aide expressions")
-        self.expression_help_button.setToolTip("Affiche les expressions, constantes et fonctions supportees.")
+        self.expression_help_button = QPushButton("Expression Help")
+        self.expression_help_button.setToolTip("Show the supported expressions, constants and functions.")
         self.expression_help_button.clicked.connect(self.show_expression_help)
         form_layout.addRow("x min", self.x_min_input)
         form_layout.addRow("x max", self.x_max_input)
         form_layout.addRow("", self.expression_help_button)
 
-        display_group = QGroupBox("Affichage")
-        display_layout = QVBoxLayout(display_group)
+        display_group = QGroupBox("Display")
+        display_layout = QGridLayout(display_group)
+        display_layout.setHorizontalSpacing(10)
+        display_layout.setVerticalSpacing(8)
 
-        self.axes_checkbox = QCheckBox("Afficher les axes")
+        self.axes_checkbox = QCheckBox("Axes")
         self.axes_checkbox.setChecked(DEFAULT_SHOW_AXES)
-        self.axes_checkbox.setToolTip("Affiche les axes X et Y sur le graphe.")
-        self.grid_checkbox = QCheckBox("Afficher la grille")
+        self.axes_checkbox.setToolTip("Show the X and Y axes on the graph.")
+        self.grid_checkbox = QCheckBox("Grid")
         self.grid_checkbox.setChecked(DEFAULT_SHOW_GRID)
-        self.grid_checkbox.setToolTip("Affiche une grille de lecture dans la zone de trace.")
-        self.axis_labels_checkbox = QCheckBox("Afficher les valeurs des axes")
+        self.grid_checkbox.setToolTip("Show a grid in the plot area.")
+        self.axis_labels_checkbox = QCheckBox("Ticks")
         self.axis_labels_checkbox.setChecked(DEFAULT_SHOW_AXIS_LABELS)
-        self.axis_labels_checkbox.setToolTip("Affiche les graduations numeriques sur les axes.")
-        self.legend_checkbox = QCheckBox("Afficher la legende")
+        self.axis_labels_checkbox.setToolTip("Show numeric tick labels on the axes.")
+        self.legend_checkbox = QCheckBox("Legend")
         self.legend_checkbox.setChecked(DEFAULT_SHOW_LEGEND)
-        self.legend_checkbox.setToolTip("Affiche un rappel colore des courbes dans le graphe.")
-        self.optimized_render_checkbox = QCheckBox("Mode optimise (plus rapide)")
+        self.legend_checkbox.setToolTip("Show a color legend for the curves in the graph.")
+        self.hover_values_checkbox = QCheckBox("Tooltip")
+        self.hover_values_checkbox.setChecked(DEFAULT_SHOW_HOVER_VALUES)
+        self.hover_values_checkbox.setToolTip("Show the floating value box under the mouse.")
+        self.optimized_render_checkbox = QCheckBox("Optimized")
         self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
         self.optimized_render_checkbox.setToolTip(
-            "Mode plus rapide pour les grandes plages, avec un rendu parfois moins lisse."
+            "Faster mode for large ranges, with a sometimes less smooth rendering."
         )
         self.axes_checkbox.toggled.connect(self.plot_expression)
         self.grid_checkbox.toggled.connect(self.plot_expression)
         self.axis_labels_checkbox.toggled.connect(self.plot_expression)
         self.legend_checkbox.toggled.connect(self.plot_expression)
+        self.hover_values_checkbox.toggled.connect(self.plot_expression)
         self.optimized_render_checkbox.toggled.connect(self.plot_expression)
-        display_layout.addWidget(self.axes_checkbox)
-        display_layout.addWidget(self.grid_checkbox)
-        display_layout.addWidget(self.axis_labels_checkbox)
-        display_layout.addWidget(self.legend_checkbox)
-        display_layout.addWidget(self.optimized_render_checkbox)
+        display_layout.addWidget(self.axes_checkbox, 0, 0)
+        display_layout.addWidget(self.grid_checkbox, 0, 1)
+        display_layout.addWidget(self.axis_labels_checkbox, 1, 0)
+        display_layout.addWidget(self.legend_checkbox, 1, 1)
+        display_layout.addWidget(self.hover_values_checkbox, 2, 0)
+        display_layout.addWidget(self.optimized_render_checkbox, 2, 1)
 
-        color_group = QGroupBox("Couleurs")
+        color_group = QGroupBox("Colors")
         color_layout = QGridLayout(color_group)
 
         self.palette_combo = QComboBox()
         self.palette_combo.addItems(["Light", "Dark", "Custom"])
         self.palette_combo.setToolTip(
-            "Choisissez une palette predefinie ou Custom pour regler les couleurs manuellement."
+            "Choose a preset palette or Custom to adjust colors manually."
         )
         self.palette_combo.currentTextChanged.connect(self._apply_palette_choice)
         self.axis_color_button = QPushButton("Axes")
-        self.grid_color_button = QPushButton("Grille")
-        self.background_color_button = QPushButton("Fond")
-        self.background_color_button.setToolTip("Choisit la couleur de fond de la zone de trace.")
-        self.axis_color_button.setToolTip("Choisit la couleur des axes et du cadre du graphe.")
-        self.grid_color_button.setToolTip("Choisit la couleur de la grille.")
+        self.grid_color_button = QPushButton("Grid")
+        self.background_color_button = QPushButton("Background")
+        self.background_color_button.setToolTip("Choose the plot background color.")
+        self.axis_color_button.setToolTip("Choose the axes and border color.")
+        self.grid_color_button.setToolTip("Choose the grid color.")
         self.background_color_button.clicked.connect(lambda: self._pick_color("background"))
         self.axis_color_button.clicked.connect(lambda: self._pick_color("axis"))
         self.grid_color_button.clicked.connect(lambda: self._pick_color("grid"))
 
         palette_label = QLabel("Palette")
-        background_label = QLabel("Fond")
+        background_label = QLabel("Background")
         axis_label = QLabel("Axes")
-        grid_label = QLabel("Grille")
+        grid_label = QLabel("Grid")
         self._color_labels = [background_label, axis_label, grid_label]
 
         color_layout.addWidget(palette_label, 0, 0)
@@ -263,11 +271,11 @@ class MainWindow(QMainWindow):
         self.default_button = QPushButton("Default")
         self.reset_view_button = QPushButton("Reset View")
         self.about_button = QPushButton("About")
-        self.save_button = QPushButton("Capture")
-        self.default_button.setToolTip("Remet tous les parametres aux valeurs par defaut.")
-        self.reset_view_button.setToolTip("Revient a la derniere vue de base du trace courant.")
-        self.about_button.setToolTip("Affiche les informations et credits de l'application.")
-        self.save_button.setToolTip("Enregistre l'image courante du graphe au format PNG.")
+        self.save_button = QPushButton("Save PNG")
+        self.default_button.setToolTip("Reset all parameters to their default values.")
+        self.reset_view_button.setToolTip("Return to the base view of the current plot.")
+        self.about_button.setToolTip("Show application information and credits.")
+        self.save_button.setToolTip("Save the current graph image as PNG.")
         self.default_button.clicked.connect(self.reset_to_defaults)
         self.reset_view_button.clicked.connect(self.reset_view)
         self.about_button.clicked.connect(self.show_about_dialog)
@@ -277,9 +285,9 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self.about_button)
         actions_layout.addWidget(self.save_button)
 
-        self.status_label = QLabel("Pret.")
+        self.status_label = QLabel("Ready.")
         self.status_label.setWordWrap(True)
-        self.status_label.setToolTip("Resume l'etat courant du trace ou les messages d'erreur.")
+        self.status_label.setToolTip("Shows the current plot state or error messages.")
 
         panel_layout.addWidget(form_group)
         panel_layout.addWidget(display_group)
@@ -308,7 +316,7 @@ class MainWindow(QMainWindow):
             "axis": self._axis_color,
             "grid": self._grid_color,
         }[role]
-        chosen = QColorDialog.getColor(QColor(current_color), self, "Choisir une couleur")
+        chosen = QColorDialog.getColor(QColor(current_color), self, "Choose a color")
         if not chosen.isValid():
             return
 
@@ -407,7 +415,7 @@ class MainWindow(QMainWindow):
             return
         row = self.curve_list.row(item)
         current_color = self._custom_curve_color_for_index(row)
-        chosen = QColorDialog.getColor(QColor(current_color), self, "Choisir la couleur de la courbe")
+        chosen = QColorDialog.getColor(QColor(current_color), self, "Choose curve color")
         if not chosen.isValid():
             return
         self._set_custom_curve_color(row, chosen.name())
@@ -473,7 +481,7 @@ class MainWindow(QMainWindow):
     def add_curve(self) -> None:
         expression = self.expression_input.text().strip()
         if not expression:
-            self.status_label.setText("Veuillez saisir une equation avant de l'ajouter.")
+            self.status_label.setText("Please enter an equation before adding it.")
             return
         try:
             self._parser.parse(expression)
@@ -497,11 +505,11 @@ class MainWindow(QMainWindow):
     def update_selected_curve(self) -> None:
         current_row = self.curve_list.currentRow()
         if current_row < 0:
-            self.status_label.setText("Selectionnez d'abord une courbe a mettre a jour.")
+            self.status_label.setText("Select a curve to update first.")
             return
         expression = self.expression_input.text().strip()
         if not expression:
-            self.status_label.setText("Veuillez saisir une equation avant la mise a jour.")
+            self.status_label.setText("Please enter an equation before updating.")
             return
         try:
             self._parser.parse(expression)
@@ -515,7 +523,7 @@ class MainWindow(QMainWindow):
     def remove_selected_curve(self) -> None:
         current_row = self.curve_list.currentRow()
         if current_row < 0:
-            self.status_label.setText("Selectionnez une courbe a supprimer.")
+            self.status_label.setText("Select a curve to remove.")
             return
         self.curve_list.takeItem(current_row)
         if current_row < len(self._custom_curve_colors):
@@ -531,16 +539,16 @@ class MainWindow(QMainWindow):
     def _read_options(self) -> Tuple[PlotOptions, List[Callable[[float], float]]]:
         curves = self._active_curve_specs()
         if not curves:
-            raise ExpressionError("Veuillez saisir une equation.")
+            raise ExpressionError("Please enter an equation.")
 
         try:
             x_min = float(self.x_min_input.text())
             x_max = float(self.x_max_input.text())
         except ValueError as exc:
-            raise ExpressionError("Les bornes x doivent etre numeriques.") from exc
+            raise ExpressionError("x bounds must be numeric.") from exc
 
         if x_min >= x_max:
-            raise ExpressionError("x min doit etre strictement inferieur a x max.")
+            raise ExpressionError("x min must be strictly smaller than x max.")
 
         plot_functions = [self._parser.parse(curve.expression) for curve in curves]
         options = PlotOptions(
@@ -551,6 +559,7 @@ class MainWindow(QMainWindow):
             show_grid=self.grid_checkbox.isChecked(),
             show_axis_labels=self.axis_labels_checkbox.isChecked(),
             show_legend=self.legend_checkbox.isChecked(),
+            show_hover_values=self.hover_values_checkbox.isChecked(),
             use_optimized_render=self.optimized_render_checkbox.isChecked(),
             background_color=self._background_color,
             axis_color=self._axis_color,
@@ -569,11 +578,11 @@ class MainWindow(QMainWindow):
         self.plot_widget.set_plot(plot_functions, options)
         if len(options.curves) == 1:
             self.status_label.setText(
-                f"Trace de y = {options.curves[0].expression} sur [{options.x_min}, {options.x_max}]"
+                f"Plotting y = {options.curves[0].expression} on [{options.x_min}, {options.x_max}]"
             )
         else:
             self.status_label.setText(
-                f"Trace de {len(options.curves)} courbes sur [{options.x_min}, {options.x_max}]"
+                f"Plotting {len(options.curves)} curves on [{options.x_min}, {options.x_max}]"
             )
         for curve in options.curves:
             self._remember_expression(curve.expression)
@@ -581,14 +590,14 @@ class MainWindow(QMainWindow):
 
     def save_plot(self) -> None:
         if not self.plot_widget.has_plot():
-            QMessageBox.warning(self, "Aucun trace", "Veuillez d'abord tracer une equation.")
+            QMessageBox.warning(self, "No Plot", "Please plot an equation first.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Enregistrer l'image",
-            "graphique.png",
-            "Images PNG (*.png)",
+            "Save Image",
+            "plot.png",
+            "PNG Images (*.png)",
         )
         if not path:
             return
@@ -597,9 +606,9 @@ class MainWindow(QMainWindow):
             path += ".png"
 
         if self.plot_widget.export_png(path):
-            self.status_label.setText(f"Image sauvegardee: {path}")
+            self.status_label.setText(f"Image saved: {path}")
         else:
-            QMessageBox.critical(self, "Erreur", "Impossible de sauvegarder l'image.")
+            QMessageBox.critical(self, "Error", "Could not save the image.")
 
     @staticmethod
     def _update_color_button(button: QPushButton, color_hex: str) -> None:
@@ -620,7 +629,7 @@ class MainWindow(QMainWindow):
         self.x_max_input.setText(f"{x_max:.6g}")
         if self.expression_input.text().strip():
             self.status_label.setText(
-                f"Trace de y = {self.expression_input.text().strip()} sur [{x_min:.6g}, {x_max:.6g}]"
+                f"Plotting y = {self.expression_input.text().strip()} on [{x_min:.6g}, {x_max:.6g}]"
             )
 
     def _remember_expression(self, expression: str) -> None:
@@ -655,25 +664,25 @@ class MainWindow(QMainWindow):
             self,
             "About EqnPlot",
             "EqnPlot\n\n"
-            "Petit traceur d'equations PyQt5.\n\n"
-            "Conception et implementation: OpenAI Codex.",
+            "A small PyQt5 equation plotter.\n\n"
+            "Designed and implemented by OpenAI Codex.",
         )
 
     def show_expression_help(self) -> None:
         QMessageBox.information(
             self,
-            "Expressions supportees",
+            "Supported Expressions",
             "Variable:\n"
             "x\n\n"
-            "Operateurs:\n"
+            "Operators:\n"
             "+   -   *   /   **   %\n\n"
-            "Constantes:\n"
+            "Constants:\n"
             "pi, e\n\n"
-            "Fonctions:\n"
+            "Functions:\n"
             "sin, cos, tan, asin, acos, atan,\n"
             "sinh, cosh, tanh, exp, log, log10,\n"
             "sqrt, fabs, floor, ceil\n\n"
-            "Exemples:\n"
+            "Examples:\n"
             "sin(x)\n"
             "x**2 - 4*x + 1\n"
             "sqrt(x)\n"
@@ -694,6 +703,7 @@ class MainWindow(QMainWindow):
             self.grid_checkbox,
             self.axis_labels_checkbox,
             self.legend_checkbox,
+            self.hover_values_checkbox,
             self.optimized_render_checkbox,
             self.palette_combo,
         ]
@@ -706,6 +716,7 @@ class MainWindow(QMainWindow):
             self.grid_checkbox.setChecked(DEFAULT_SHOW_GRID)
             self.axis_labels_checkbox.setChecked(DEFAULT_SHOW_AXIS_LABELS)
             self.legend_checkbox.setChecked(DEFAULT_SHOW_LEGEND)
+            self.hover_values_checkbox.setChecked(DEFAULT_SHOW_HOVER_VALUES)
             self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
             self.palette_combo.setCurrentText(DEFAULT_PALETTE)
             self._apply_palette(DEFAULT_PALETTE, trigger_redraw=False)
@@ -733,6 +744,7 @@ class MainWindow(QMainWindow):
             self.grid_checkbox,
             self.axis_labels_checkbox,
             self.legend_checkbox,
+            self.hover_values_checkbox,
             self.optimized_render_checkbox,
             self.palette_combo,
         ]
@@ -752,6 +764,9 @@ class MainWindow(QMainWindow):
             )
             self.legend_checkbox.setChecked(
                 self._settings.value("show_legend", DEFAULT_SHOW_LEGEND, type=bool)
+            )
+            self.hover_values_checkbox.setChecked(
+                self._settings.value("show_hover_values", DEFAULT_SHOW_HOVER_VALUES, type=bool)
             )
             self.optimized_render_checkbox.setChecked(
                 self._settings.value("use_optimized_render", DEFAULT_OPTIMIZED_RENDER, type=bool)
@@ -806,6 +821,7 @@ class MainWindow(QMainWindow):
         self._settings.setValue("show_grid", self.grid_checkbox.isChecked())
         self._settings.setValue("show_axis_labels", self.axis_labels_checkbox.isChecked())
         self._settings.setValue("show_legend", self.legend_checkbox.isChecked())
+        self._settings.setValue("show_hover_values", self.hover_values_checkbox.isChecked())
         self._settings.setValue("use_optimized_render", self.optimized_render_checkbox.isChecked())
         self._settings.setValue("palette", self.palette_combo.currentText())
         self._settings.setValue("background_color", self._background_color)
@@ -851,12 +867,21 @@ def run() -> None:
 
 
 def load_app_icon() -> QIcon:
-    project_root = Path(__file__).resolve().parent.parent
-    candidates = [
-        project_root / "assets" / "eqnplot-icon.ico",
-        project_root / "assets" / "eqnplot.ico",
-        project_root / "assets" / "eqnplot-icon.png",
-    ]
+    if getattr(sys, "frozen", False):
+        bundled_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+        candidates = [
+            bundled_root / "assets" / "eqnplot-icon.ico",
+            bundled_root / "eqnplot-icon.ico",
+            Path(sys.executable).resolve().parent / "assets" / "eqnplot-icon.ico",
+            Path(sys.executable).resolve().parent / "eqnplot-icon.ico",
+        ]
+    else:
+        project_root = Path(__file__).resolve().parent.parent
+        candidates = [
+            project_root / "assets" / "eqnplot-icon.ico",
+            project_root / "assets" / "eqnplot.ico",
+            project_root / "assets" / "eqnplot-icon.png",
+        ]
     for path in candidates:
         if path.exists():
             return QIcon(str(path))
