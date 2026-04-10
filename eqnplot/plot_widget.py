@@ -1,9 +1,9 @@
 import math
 from dataclasses import dataclass, replace
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from PyQt5.QtCore import QPoint, QPointF, QRect, QRectF, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
+from PyQt5.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt5.QtWidgets import QWidget
 
 from eqnplot.models import PlotOptions
@@ -230,7 +230,7 @@ class PlotWidget(QWidget):
     def _sample_points(self, pixel_width: int) -> List[PointData]:
         assert self._plot_function is not None
         assert self._plot_options is not None
-        sample_count = max(300, pixel_width * 2)
+        sample_count = self._sample_count_for_width(pixel_width)
         x_min = self._plot_options.x_min
         x_max = self._plot_options.x_max
         step = (x_max - x_min) / (sample_count - 1)
@@ -248,6 +248,10 @@ class PlotWidget(QWidget):
                 points.append((x_value, None))
 
         return points
+
+    @staticmethod
+    def _sample_count_for_width(pixel_width: int) -> int:
+        return max(2, int(round(pixel_width)) * 5)
 
     def _get_render_data(self, plot_rect: QRectF) -> Optional[RenderData]:
         cache_size = (int(plot_rect.width()), int(plot_rect.height()))
@@ -352,11 +356,65 @@ class PlotWidget(QWidget):
         curve_pen = QPen(QColor(self._plot_options.curve_color), 2)
         painter.setPen(curve_pen)
 
-        path = QPainterPath()
-        drawing_segment = False
+        if not self._plot_options.use_optimized_render:
+            self._draw_curve_smooth_path(painter, plot_rect, samples, y_min, y_max)
+            return
+
+        if len(samples) > int(plot_rect.width()) * 3:
+            self._draw_dense_curve_by_columns(painter, plot_rect, samples, y_min, y_max)
+            return
+
         simplified_samples = self._simplify_samples_for_drawing(samples, plot_rect, y_min, y_max)
+        current_segment = QPolygonF()
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
 
         for x_value, y_value in simplified_samples:
+            if y_value is None:
+                if current_segment.size() >= 2:
+                    painter.drawPolyline(current_segment)
+                elif current_segment.size() == 1:
+                    painter.drawPoint(current_segment[0])
+                current_segment = QPolygonF()
+                continue
+
+            if y_value < y_min - (y_max - y_min) * 5 or y_value > y_max + (y_max - y_min) * 5:
+                if current_segment.size() >= 2:
+                    painter.drawPolyline(current_segment)
+                elif current_segment.size() == 1:
+                    painter.drawPoint(current_segment[0])
+                current_segment = QPolygonF()
+                continue
+
+            point = QPointF(
+                self._map_x(x_value, plot_rect),
+                self._map_y(y_value, plot_rect, y_min, y_max),
+            )
+            current_segment.append(point)
+
+        if current_segment.size() >= 2:
+            painter.drawPolyline(current_segment)
+        elif current_segment.size() == 1:
+            painter.drawPoint(current_segment[0])
+
+        painter.restore()
+
+    def _draw_curve_smooth_path(
+        self,
+        painter: QPainter,
+        plot_rect: QRectF,
+        samples: Sequence[PointData],
+        y_min: float,
+        y_max: float,
+    ) -> None:
+        path = QPainterPath()
+        drawing_segment = False
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        for x_value, y_value in samples:
             if y_value is None:
                 drawing_segment = False
                 continue
@@ -377,6 +435,43 @@ class PlotWidget(QWidget):
                 path.lineTo(point)
 
         painter.drawPath(path)
+        painter.restore()
+
+    def _draw_dense_curve_by_columns(
+        self,
+        painter: QPainter,
+        plot_rect: QRectF,
+        samples: Sequence[PointData],
+        y_min: float,
+        y_max: float,
+    ) -> None:
+        columns: Dict[int, List[float]] = {}
+        x_out_of_range_margin = (y_max - y_min) * 5
+
+        for x_value, y_value in samples:
+            if y_value is None:
+                continue
+            if y_value < y_min - x_out_of_range_margin or y_value > y_max + x_out_of_range_margin:
+                continue
+            pixel_x = int(round(self._map_x(x_value, plot_rect)))
+            if pixel_x < int(plot_rect.left()) or pixel_x > int(plot_rect.right()):
+                continue
+            pixel_y = self._map_y(y_value, plot_rect, y_min, y_max)
+            bucket = columns.setdefault(pixel_x, [pixel_y, pixel_y])
+            if pixel_y < bucket[0]:
+                bucket[0] = pixel_y
+            if pixel_y > bucket[1]:
+                bucket[1] = pixel_y
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        for pixel_x in sorted(columns):
+            min_y, max_y = columns[pixel_x]
+            if math.isclose(min_y, max_y, abs_tol=0.5):
+                painter.drawPoint(QPointF(pixel_x, min_y))
+            else:
+                painter.drawLine(QPointF(pixel_x, min_y), QPointF(pixel_x, max_y))
+        painter.restore()
 
     def _simplify_samples_for_drawing(
         self,

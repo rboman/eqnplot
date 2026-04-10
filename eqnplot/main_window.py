@@ -86,12 +86,16 @@ class MainWindow(QMainWindow):
         self.grid_checkbox.setChecked(True)
         self.axis_labels_checkbox = QCheckBox("Afficher les valeurs des axes")
         self.axis_labels_checkbox.setChecked(True)
+        self.optimized_render_checkbox = QCheckBox("Mode optimise (plus rapide)")
+        self.optimized_render_checkbox.setChecked(True)
         self.axes_checkbox.toggled.connect(self.plot_expression)
         self.grid_checkbox.toggled.connect(self.plot_expression)
         self.axis_labels_checkbox.toggled.connect(self.plot_expression)
+        self.optimized_render_checkbox.toggled.connect(self.plot_expression)
         display_layout.addWidget(self.axes_checkbox)
         display_layout.addWidget(self.grid_checkbox)
         display_layout.addWidget(self.axis_labels_checkbox)
+        display_layout.addWidget(self.optimized_render_checkbox)
 
         color_group = QGroupBox("Couleurs")
         color_layout = QGridLayout(color_group)
@@ -182,6 +186,7 @@ class MainWindow(QMainWindow):
             show_axes=self.axes_checkbox.isChecked(),
             show_grid=self.grid_checkbox.isChecked(),
             show_axis_labels=self.axis_labels_checkbox.isChecked(),
+            use_optimized_render=self.optimized_render_checkbox.isChecked(),
             curve_color=self._curve_color,
             axis_color=self._axis_color,
             grid_color=self._grid_color,

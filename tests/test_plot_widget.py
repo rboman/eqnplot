@@ -26,6 +26,7 @@ class PlotWidgetTests(unittest.TestCase):
 
     def test_current_x_range_reflects_plot_state(self):
         self.assertEqual(self.widget.current_x_range(), (-10, 10))
+        self.assertTrue(self.widget._plot_options.use_optimized_render)
 
     def test_set_x_range_emits_signal_and_updates_state(self):
         captured = []
@@ -84,6 +85,36 @@ class PlotWidgetTests(unittest.TestCase):
         widget.close()
         widget.deleteLater()
 
+    def test_sample_count_depends_only_on_pixel_width(self):
+        self.assertEqual(self.widget._sample_count_for_width(604), 3020)
+        self.assertEqual(self.widget._sample_count_for_width(12), 60)
+
+    def test_sampling_cost_is_independent_from_x_range(self):
+        counts = []
+
+        def counted(x_value):
+            counts[-1] += 1
+            return x_value
+
+        widget = PlotWidget()
+        widget.resize(640, 420)
+        plot_rect = widget._plot_area()
+
+        counts.append(0)
+        widget.set_plot(counted, PlotOptions(expression="x", x_min=-10, x_max=10))
+        widget._get_render_data(plot_rect)
+        first_count = counts[-1]
+
+        counts.append(0)
+        widget.set_plot(counted, PlotOptions(expression="x", x_min=-1000, x_max=1000))
+        widget._get_render_data(plot_rect)
+        second_count = counts[-1]
+
+        self.assertEqual(first_count, second_count)
+        self.assertEqual(first_count, widget._sample_count_for_width(int(plot_rect.width())))
+        widget.close()
+        widget.deleteLater()
+
     def test_simplify_samples_reduces_dense_draw_points(self):
         plot_rect = self.widget._plot_area()
         dense_samples = [(index * 0.001, math.sin(index * 0.001)) for index in range(5000)]
@@ -92,6 +123,22 @@ class PlotWidgetTests(unittest.TestCase):
 
         self.assertLess(len(simplified), len(dense_samples))
         self.assertGreater(len(simplified), 0)
+
+    def test_dense_column_renderer_groups_points_by_pixel(self):
+        plot_rect = self.widget._plot_area()
+        samples = [(0.0, -1.0), (0.001, 0.0), (0.002, 1.0)]
+
+        columns = {}
+        for x_value, y_value in samples:
+            pixel_x = int(round(self.widget._map_x(x_value, plot_rect)))
+            pixel_y = self.widget._map_y(y_value, plot_rect, -1.2, 1.2)
+            bucket = columns.setdefault(pixel_x, [pixel_y, pixel_y])
+            bucket[0] = min(bucket[0], pixel_y)
+            bucket[1] = max(bucket[1], pixel_y)
+
+        self.assertEqual(len(columns), 1)
+        min_y, max_y = next(iter(columns.values()))
+        self.assertLess(min_y, max_y)
 
 
 if __name__ == "__main__":
