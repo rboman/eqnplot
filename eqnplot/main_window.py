@@ -64,10 +64,16 @@ class MainWindow(QMainWindow):
 
         self.expression_input = QLineEdit("sin(x)")
         self.expression_input.setPlaceholderText("Ex: sin(x) ou x**2")
+        self.expression_input.editingFinished.connect(self.plot_expression)
+        self.expression_input.returnPressed.connect(self.plot_expression)
         form_layout.addRow("y =", self.expression_input)
 
         self.x_min_input = QLineEdit("-10")
         self.x_max_input = QLineEdit("10")
+        self.x_min_input.editingFinished.connect(self.plot_expression)
+        self.x_min_input.returnPressed.connect(self.plot_expression)
+        self.x_max_input.editingFinished.connect(self.plot_expression)
+        self.x_max_input.returnPressed.connect(self.plot_expression)
         form_layout.addRow("x min", self.x_min_input)
         form_layout.addRow("x max", self.x_max_input)
 
@@ -80,6 +86,9 @@ class MainWindow(QMainWindow):
         self.grid_checkbox.setChecked(True)
         self.axis_labels_checkbox = QCheckBox("Afficher les valeurs des axes")
         self.axis_labels_checkbox.setChecked(True)
+        self.axes_checkbox.toggled.connect(self.plot_expression)
+        self.grid_checkbox.toggled.connect(self.plot_expression)
+        self.axis_labels_checkbox.toggled.connect(self.plot_expression)
         display_layout.addWidget(self.axes_checkbox)
         display_layout.addWidget(self.grid_checkbox)
         display_layout.addWidget(self.axis_labels_checkbox)
