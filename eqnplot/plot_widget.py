@@ -177,9 +177,10 @@ class PlotWidget(QWidget):
         rect = self.rect()
         background = QColor(self._plot_options.background_color) if self._plot_options else QColor("#ffffff")
         painter.fillRect(rect, background)
+        accent_color = QColor(self._plot_options.axis_color) if self._plot_options else QColor("#444444")
 
         if not self._plot_function or not self._plot_options:
-            painter.setPen(QColor("#555555"))
+            painter.setPen(accent_color)
             painter.drawText(rect, Qt.AlignCenter, self._status_message)
             return
 
@@ -207,7 +208,7 @@ class PlotWidget(QWidget):
 
         self._draw_curve(painter, plot_rect, samples, y_min, y_max)
         self._draw_hover_indicator(painter, plot_rect, y_min, y_max)
-        painter.setPen(QColor("#444444"))
+        painter.setPen(accent_color)
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(plot_rect)
 

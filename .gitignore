@@ -33,3 +33,5 @@ Thumbs.db
 # Local smoke-test artifacts
 smoke_export.png
 tmp*.png
+
+*.png

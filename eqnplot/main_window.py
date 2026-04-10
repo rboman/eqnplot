@@ -1,6 +1,7 @@
 import sys
 from typing import Callable, Tuple
 
+from PyQt5.QtCore import QSettings
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QApplication,
@@ -25,6 +26,14 @@ from eqnplot.models import PlotOptions
 from eqnplot.parser import ExpressionError, ExpressionParser
 from eqnplot.plot_widget import PlotWidget
 
+DEFAULT_EXPRESSION = "sin(x)"
+DEFAULT_X_MIN = "-10"
+DEFAULT_X_MAX = "10"
+DEFAULT_SHOW_AXES = True
+DEFAULT_SHOW_GRID = True
+DEFAULT_SHOW_AXIS_LABELS = True
+DEFAULT_OPTIMIZED_RENDER = False
+DEFAULT_PALETTE = "Light"
 
 PALETTES = {
     "Light": {
@@ -47,12 +56,18 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("EqnPlot")
         self.resize(980, 680)
+        self._settings = QSettings("EqnPlot", "EqnPlot")
 
         self._parser = ExpressionParser()
-        self._background_color = "#ffffff"
-        self._curve_color = "#d1495b"
-        self._axis_color = "#222222"
-        self._grid_color = "#c8d5dd"
+        self._background_color = PALETTES[DEFAULT_PALETTE]["background"]
+        self._curve_color = PALETTES[DEFAULT_PALETTE]["curve"]
+        self._axis_color = PALETTES[DEFAULT_PALETTE]["axis"]
+        self._grid_color = PALETTES[DEFAULT_PALETTE]["grid"]
+        self._custom_background_color = self._background_color
+        self._custom_curve_color = self._curve_color
+        self._custom_axis_color = self._axis_color
+        self._custom_grid_color = self._grid_color
+        self._color_labels = []
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -80,14 +95,14 @@ class MainWindow(QMainWindow):
         form_group = QGroupBox("Equation")
         form_layout = QFormLayout(form_group)
 
-        self.expression_input = QLineEdit("sin(x)")
+        self.expression_input = QLineEdit(DEFAULT_EXPRESSION)
         self.expression_input.setPlaceholderText("Ex: sin(x) ou x**2")
         self.expression_input.editingFinished.connect(self.plot_expression)
         self.expression_input.returnPressed.connect(self.plot_expression)
         form_layout.addRow("y =", self.expression_input)
 
-        self.x_min_input = QLineEdit("-10")
-        self.x_max_input = QLineEdit("10")
+        self.x_min_input = QLineEdit(DEFAULT_X_MIN)
+        self.x_max_input = QLineEdit(DEFAULT_X_MAX)
         self.x_min_input.editingFinished.connect(self.plot_expression)
         self.x_min_input.returnPressed.connect(self.plot_expression)
         self.x_max_input.editingFinished.connect(self.plot_expression)
@@ -99,13 +114,13 @@ class MainWindow(QMainWindow):
         display_layout = QVBoxLayout(display_group)
 
         self.axes_checkbox = QCheckBox("Afficher les axes")
-        self.axes_checkbox.setChecked(True)
+        self.axes_checkbox.setChecked(DEFAULT_SHOW_AXES)
         self.grid_checkbox = QCheckBox("Afficher la grille")
-        self.grid_checkbox.setChecked(True)
+        self.grid_checkbox.setChecked(DEFAULT_SHOW_GRID)
         self.axis_labels_checkbox = QCheckBox("Afficher les valeurs des axes")
-        self.axis_labels_checkbox.setChecked(True)
+        self.axis_labels_checkbox.setChecked(DEFAULT_SHOW_AXIS_LABELS)
         self.optimized_render_checkbox = QCheckBox("Mode optimise (plus rapide)")
-        self.optimized_render_checkbox.setChecked(True)
+        self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
         self.axes_checkbox.toggled.connect(self.plot_expression)
         self.grid_checkbox.toggled.connect(self.plot_expression)
         self.axis_labels_checkbox.toggled.connect(self.plot_expression)
@@ -130,23 +145,33 @@ class MainWindow(QMainWindow):
         self.axis_color_button.clicked.connect(lambda: self._pick_color("axis"))
         self.grid_color_button.clicked.connect(lambda: self._pick_color("grid"))
 
-        color_layout.addWidget(QLabel("Palette"), 0, 0)
+        palette_label = QLabel("Palette")
+        background_label = QLabel("Fond")
+        curve_label = QLabel("Courbe")
+        axis_label = QLabel("Axes")
+        grid_label = QLabel("Grille")
+        self._color_labels = [background_label, curve_label, axis_label, grid_label]
+
+        color_layout.addWidget(palette_label, 0, 0)
         color_layout.addWidget(self.palette_combo, 0, 1)
-        color_layout.addWidget(QLabel("Fond"), 1, 0)
+        color_layout.addWidget(background_label, 1, 0)
         color_layout.addWidget(self.background_color_button, 1, 1)
-        color_layout.addWidget(QLabel("Courbe"), 2, 0)
+        color_layout.addWidget(curve_label, 2, 0)
         color_layout.addWidget(self.curve_color_button, 2, 1)
-        color_layout.addWidget(QLabel("Axes"), 3, 0)
+        color_layout.addWidget(axis_label, 3, 0)
         color_layout.addWidget(self.axis_color_button, 3, 1)
-        color_layout.addWidget(QLabel("Grille"), 4, 0)
+        color_layout.addWidget(grid_label, 4, 0)
         color_layout.addWidget(self.grid_color_button, 4, 1)
 
         actions_layout = QHBoxLayout()
-        self.plot_button = QPushButton("Tracer")
+        self.default_button = QPushButton("Default")
+        self.about_button = QPushButton("About")
         self.save_button = QPushButton("Sauvegarder")
-        self.plot_button.clicked.connect(self.plot_expression)
+        self.default_button.clicked.connect(self.reset_to_defaults)
+        self.about_button.clicked.connect(self.show_about_dialog)
         self.save_button.clicked.connect(self.save_plot)
-        actions_layout.addWidget(self.plot_button)
+        actions_layout.addWidget(self.default_button)
+        actions_layout.addWidget(self.about_button)
         actions_layout.addWidget(self.save_button)
 
         self.status_label = QLabel("Pret.")
@@ -165,13 +190,14 @@ class MainWindow(QMainWindow):
         return panel
 
     def _apply_defaults(self) -> None:
-        self._apply_palette("Light", trigger_redraw=False)
+        self._apply_palette(DEFAULT_PALETTE, trigger_redraw=False)
         self._set_custom_color_controls_enabled(False)
-        self.palette_combo.setCurrentText("Light")
+        self.palette_combo.setCurrentText(DEFAULT_PALETTE)
         self._update_color_button(self.background_color_button, self._background_color)
         self._update_color_button(self.curve_color_button, self._curve_color)
         self._update_color_button(self.axis_color_button, self._axis_color)
         self._update_color_button(self.grid_color_button, self._grid_color)
+        self._load_settings()
         self.plot_expression()
 
     def _pick_color(self, role: str) -> None:
@@ -190,20 +216,25 @@ class MainWindow(QMainWindow):
         color_name = chosen.name()
         if role == "background":
             self._background_color = color_name
+            self._custom_background_color = color_name
             self._update_color_button(self.background_color_button, color_name)
         elif role == "curve":
             self._curve_color = color_name
+            self._custom_curve_color = color_name
             self._update_color_button(self.curve_color_button, color_name)
         elif role == "axis":
             self._axis_color = color_name
+            self._custom_axis_color = color_name
             self._update_color_button(self.axis_color_button, color_name)
         else:
             self._grid_color = color_name
+            self._custom_grid_color = color_name
             self._update_color_button(self.grid_color_button, color_name)
         self.plot_expression()
 
     def _apply_palette_choice(self, palette_name: str) -> None:
         if palette_name == "Custom":
+            self._restore_custom_colors()
             self._set_custom_color_controls_enabled(True)
             self.plot_expression()
             return
@@ -229,6 +260,18 @@ class MainWindow(QMainWindow):
         self.curve_color_button.setEnabled(enabled)
         self.axis_color_button.setEnabled(enabled)
         self.grid_color_button.setEnabled(enabled)
+        for label in self._color_labels:
+            label.setEnabled(enabled)
+
+    def _restore_custom_colors(self) -> None:
+        self._background_color = self._custom_background_color
+        self._curve_color = self._custom_curve_color
+        self._axis_color = self._custom_axis_color
+        self._grid_color = self._custom_grid_color
+        self._update_color_button(self.background_color_button, self._background_color)
+        self._update_color_button(self.curve_color_button, self._curve_color)
+        self._update_color_button(self.axis_color_button, self._axis_color)
+        self._update_color_button(self.grid_color_button, self._grid_color)
 
     def _read_options(self) -> Tuple[PlotOptions, Callable[[float], float]]:
         expression = self.expression_input.text().strip()
@@ -270,6 +313,7 @@ class MainWindow(QMainWindow):
 
         self.plot_widget.set_plot(plot_function, options)
         self.status_label.setText(f"Trace de y = {options.expression} sur [{options.x_min}, {options.x_max}]")
+        self._save_settings()
 
     def save_plot(self) -> None:
         if not self.plot_widget.has_plot():
@@ -317,6 +361,129 @@ class MainWindow(QMainWindow):
 
     def _sync_cursor_value(self, text: str) -> None:
         self.cursor_value_label.setText(text)
+
+    def show_about_dialog(self) -> None:
+        QMessageBox.about(
+            self,
+            "About EqnPlot",
+            "EqnPlot\n\n"
+            "Petit traceur d'equations PyQt5.\n\n"
+            "Conception et implementation: OpenAI Codex.",
+        )
+
+    def reset_to_defaults(self) -> None:
+        widgets = [
+            self.expression_input,
+            self.x_min_input,
+            self.x_max_input,
+            self.axes_checkbox,
+            self.grid_checkbox,
+            self.axis_labels_checkbox,
+            self.optimized_render_checkbox,
+            self.palette_combo,
+        ]
+        previous_states = [(widget, widget.blockSignals(True)) for widget in widgets]
+        try:
+            self.expression_input.setText(DEFAULT_EXPRESSION)
+            self.x_min_input.setText(DEFAULT_X_MIN)
+            self.x_max_input.setText(DEFAULT_X_MAX)
+            self.axes_checkbox.setChecked(DEFAULT_SHOW_AXES)
+            self.grid_checkbox.setChecked(DEFAULT_SHOW_GRID)
+            self.axis_labels_checkbox.setChecked(DEFAULT_SHOW_AXIS_LABELS)
+            self.optimized_render_checkbox.setChecked(DEFAULT_OPTIMIZED_RENDER)
+            self.palette_combo.setCurrentText(DEFAULT_PALETTE)
+            self._apply_palette(DEFAULT_PALETTE, trigger_redraw=False)
+            self._custom_background_color = PALETTES[DEFAULT_PALETTE]["background"]
+            self._custom_curve_color = PALETTES[DEFAULT_PALETTE]["curve"]
+            self._custom_axis_color = PALETTES[DEFAULT_PALETTE]["axis"]
+            self._custom_grid_color = PALETTES[DEFAULT_PALETTE]["grid"]
+            self._set_custom_color_controls_enabled(False)
+            self.cursor_value_label.clear()
+        finally:
+            for widget, previous_state in previous_states:
+                widget.blockSignals(previous_state)
+
+        self.plot_expression()
+
+    def _load_settings(self) -> None:
+        widgets = [
+            self.expression_input,
+            self.x_min_input,
+            self.x_max_input,
+            self.axes_checkbox,
+            self.grid_checkbox,
+            self.axis_labels_checkbox,
+            self.optimized_render_checkbox,
+            self.palette_combo,
+        ]
+        previous_states = [(widget, widget.blockSignals(True)) for widget in widgets]
+        try:
+            palette_name = self._settings.value("palette", DEFAULT_PALETTE, type=str)
+            if palette_name not in {"Light", "Dark", "Custom"}:
+                palette_name = DEFAULT_PALETTE
+
+            self.expression_input.setText(self._settings.value("expression", DEFAULT_EXPRESSION, type=str))
+            self.x_min_input.setText(self._settings.value("x_min", DEFAULT_X_MIN, type=str))
+            self.x_max_input.setText(self._settings.value("x_max", DEFAULT_X_MAX, type=str))
+            self.axes_checkbox.setChecked(self._settings.value("show_axes", DEFAULT_SHOW_AXES, type=bool))
+            self.grid_checkbox.setChecked(self._settings.value("show_grid", DEFAULT_SHOW_GRID, type=bool))
+            self.axis_labels_checkbox.setChecked(
+                self._settings.value("show_axis_labels", DEFAULT_SHOW_AXIS_LABELS, type=bool)
+            )
+            self.optimized_render_checkbox.setChecked(
+                self._settings.value("use_optimized_render", DEFAULT_OPTIMIZED_RENDER, type=bool)
+            )
+            self.palette_combo.setCurrentText(palette_name)
+
+            if palette_name == "Custom":
+                self._custom_background_color = self._settings.value("custom_background_color", "#ffffff", type=str)
+                self._custom_curve_color = self._settings.value("custom_curve_color", "#d1495b", type=str)
+                self._custom_axis_color = self._settings.value("custom_axis_color", "#222222", type=str)
+                self._custom_grid_color = self._settings.value("custom_grid_color", "#c8d5dd", type=str)
+                self._restore_custom_colors()
+                self._set_custom_color_controls_enabled(True)
+            else:
+                self._custom_background_color = self._settings.value(
+                    "custom_background_color", PALETTES[DEFAULT_PALETTE]["background"], type=str
+                )
+                self._custom_curve_color = self._settings.value(
+                    "custom_curve_color", PALETTES[DEFAULT_PALETTE]["curve"], type=str
+                )
+                self._custom_axis_color = self._settings.value(
+                    "custom_axis_color", PALETTES[DEFAULT_PALETTE]["axis"], type=str
+                )
+                self._custom_grid_color = self._settings.value(
+                    "custom_grid_color", PALETTES[DEFAULT_PALETTE]["grid"], type=str
+                )
+                self._apply_palette(palette_name, trigger_redraw=False)
+                self._set_custom_color_controls_enabled(False)
+
+            self._update_color_button(self.background_color_button, self._background_color)
+            self._update_color_button(self.curve_color_button, self._curve_color)
+            self._update_color_button(self.axis_color_button, self._axis_color)
+            self._update_color_button(self.grid_color_button, self._grid_color)
+        finally:
+            for widget, previous_state in previous_states:
+                widget.blockSignals(previous_state)
+
+    def _save_settings(self) -> None:
+        self._settings.setValue("expression", self.expression_input.text().strip())
+        self._settings.setValue("x_min", self.x_min_input.text().strip())
+        self._settings.setValue("x_max", self.x_max_input.text().strip())
+        self._settings.setValue("show_axes", self.axes_checkbox.isChecked())
+        self._settings.setValue("show_grid", self.grid_checkbox.isChecked())
+        self._settings.setValue("show_axis_labels", self.axis_labels_checkbox.isChecked())
+        self._settings.setValue("use_optimized_render", self.optimized_render_checkbox.isChecked())
+        self._settings.setValue("palette", self.palette_combo.currentText())
+        self._settings.setValue("background_color", self._background_color)
+        self._settings.setValue("curve_color", self._curve_color)
+        self._settings.setValue("axis_color", self._axis_color)
+        self._settings.setValue("grid_color", self._grid_color)
+        self._settings.setValue("custom_background_color", self._custom_background_color)
+        self._settings.setValue("custom_curve_color", self._custom_curve_color)
+        self._settings.setValue("custom_axis_color", self._custom_axis_color)
+        self._settings.setValue("custom_grid_color", self._custom_grid_color)
+        self._settings.sync()
 
 
 def run() -> None:
