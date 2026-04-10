@@ -5,6 +5,7 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QColorDialog,
     QFileDialog,
     QFormLayout,
@@ -25,6 +26,22 @@ from eqnplot.parser import ExpressionError, ExpressionParser
 from eqnplot.plot_widget import PlotWidget
 
 
+PALETTES = {
+    "Light": {
+        "background": "#ffffff",
+        "curve": "#d1495b",
+        "axis": "#222222",
+        "grid": "#c8d5dd",
+    },
+    "Dark": {
+        "background": "#111827",
+        "curve": "#f87171",
+        "axis": "#f3f4f6",
+        "grid": "#334155",
+    },
+}
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -32,6 +49,7 @@ class MainWindow(QMainWindow):
         self.resize(980, 680)
 
         self._parser = ExpressionParser()
+        self._background_color = "#ffffff"
         self._curve_color = "#d1495b"
         self._axis_color = "#222222"
         self._grid_color = "#c8d5dd"
@@ -100,19 +118,28 @@ class MainWindow(QMainWindow):
         color_group = QGroupBox("Couleurs")
         color_layout = QGridLayout(color_group)
 
+        self.palette_combo = QComboBox()
+        self.palette_combo.addItems(["Light", "Dark", "Custom"])
+        self.palette_combo.currentTextChanged.connect(self._apply_palette_choice)
         self.curve_color_button = QPushButton("Courbe")
         self.axis_color_button = QPushButton("Axes")
         self.grid_color_button = QPushButton("Grille")
+        self.background_color_button = QPushButton("Fond")
+        self.background_color_button.clicked.connect(lambda: self._pick_color("background"))
         self.curve_color_button.clicked.connect(lambda: self._pick_color("curve"))
         self.axis_color_button.clicked.connect(lambda: self._pick_color("axis"))
         self.grid_color_button.clicked.connect(lambda: self._pick_color("grid"))
 
-        color_layout.addWidget(QLabel("Courbe"), 0, 0)
-        color_layout.addWidget(self.curve_color_button, 0, 1)
-        color_layout.addWidget(QLabel("Axes"), 1, 0)
-        color_layout.addWidget(self.axis_color_button, 1, 1)
-        color_layout.addWidget(QLabel("Grille"), 2, 0)
-        color_layout.addWidget(self.grid_color_button, 2, 1)
+        color_layout.addWidget(QLabel("Palette"), 0, 0)
+        color_layout.addWidget(self.palette_combo, 0, 1)
+        color_layout.addWidget(QLabel("Fond"), 1, 0)
+        color_layout.addWidget(self.background_color_button, 1, 1)
+        color_layout.addWidget(QLabel("Courbe"), 2, 0)
+        color_layout.addWidget(self.curve_color_button, 2, 1)
+        color_layout.addWidget(QLabel("Axes"), 3, 0)
+        color_layout.addWidget(self.axis_color_button, 3, 1)
+        color_layout.addWidget(QLabel("Grille"), 4, 0)
+        color_layout.addWidget(self.grid_color_button, 4, 1)
 
         actions_layout = QHBoxLayout()
         self.plot_button = QPushButton("Tracer")
@@ -138,13 +165,20 @@ class MainWindow(QMainWindow):
         return panel
 
     def _apply_defaults(self) -> None:
+        self._apply_palette("Light", trigger_redraw=False)
+        self._set_custom_color_controls_enabled(False)
+        self.palette_combo.setCurrentText("Light")
+        self._update_color_button(self.background_color_button, self._background_color)
         self._update_color_button(self.curve_color_button, self._curve_color)
         self._update_color_button(self.axis_color_button, self._axis_color)
         self._update_color_button(self.grid_color_button, self._grid_color)
         self.plot_expression()
 
     def _pick_color(self, role: str) -> None:
+        if self.palette_combo.currentText() != "Custom":
+            return
         current_color = {
+            "background": self._background_color,
             "curve": self._curve_color,
             "axis": self._axis_color,
             "grid": self._grid_color,
@@ -154,7 +188,10 @@ class MainWindow(QMainWindow):
             return
 
         color_name = chosen.name()
-        if role == "curve":
+        if role == "background":
+            self._background_color = color_name
+            self._update_color_button(self.background_color_button, color_name)
+        elif role == "curve":
             self._curve_color = color_name
             self._update_color_button(self.curve_color_button, color_name)
         elif role == "axis":
@@ -163,6 +200,35 @@ class MainWindow(QMainWindow):
         else:
             self._grid_color = color_name
             self._update_color_button(self.grid_color_button, color_name)
+        self.plot_expression()
+
+    def _apply_palette_choice(self, palette_name: str) -> None:
+        if palette_name == "Custom":
+            self._set_custom_color_controls_enabled(True)
+            self.plot_expression()
+            return
+
+        self._apply_palette(palette_name, trigger_redraw=True)
+        self._set_custom_color_controls_enabled(False)
+
+    def _apply_palette(self, palette_name: str, trigger_redraw: bool) -> None:
+        palette = PALETTES[palette_name]
+        self._background_color = palette["background"]
+        self._curve_color = palette["curve"]
+        self._axis_color = palette["axis"]
+        self._grid_color = palette["grid"]
+        self._update_color_button(self.background_color_button, self._background_color)
+        self._update_color_button(self.curve_color_button, self._curve_color)
+        self._update_color_button(self.axis_color_button, self._axis_color)
+        self._update_color_button(self.grid_color_button, self._grid_color)
+        if trigger_redraw:
+            self.plot_expression()
+
+    def _set_custom_color_controls_enabled(self, enabled: bool) -> None:
+        self.background_color_button.setEnabled(enabled)
+        self.curve_color_button.setEnabled(enabled)
+        self.axis_color_button.setEnabled(enabled)
+        self.grid_color_button.setEnabled(enabled)
 
     def _read_options(self) -> Tuple[PlotOptions, Callable[[float], float]]:
         expression = self.expression_input.text().strip()
@@ -187,6 +253,7 @@ class MainWindow(QMainWindow):
             show_grid=self.grid_checkbox.isChecked(),
             show_axis_labels=self.axis_labels_checkbox.isChecked(),
             use_optimized_render=self.optimized_render_checkbox.isChecked(),
+            background_color=self._background_color,
             curve_color=self._curve_color,
             axis_color=self._axis_color,
             grid_color=self._grid_color,
@@ -228,9 +295,12 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _update_color_button(button: QPushButton, color_hex: str) -> None:
+        color = QColor(color_hex)
+        text_color = "#000000" if color.lightness() > 140 else "#ffffff"
         button.setStyleSheet(
             "QPushButton {"
             f"background-color: {color_hex};"
+            f"color: {text_color};"
             "border: 1px solid #999999;"
             "padding: 6px;"
             "}"

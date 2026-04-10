@@ -56,7 +56,8 @@ class PlotWidget(QWidget):
 
     def export_png(self, path: str) -> bool:
         image = QImage(self.size(), QImage.Format_ARGB32)
-        image.fill(Qt.white)
+        fill_color = QColor(self._plot_options.background_color) if self._plot_options else QColor("#ffffff")
+        image.fill(fill_color)
         painter = QPainter(image)
         try:
             self._paint_contents(painter)
@@ -174,7 +175,8 @@ class PlotWidget(QWidget):
     def _paint_contents(self, painter: QPainter) -> None:
         painter.setRenderHint(QPainter.Antialiasing, True)
         rect = self.rect()
-        painter.fillRect(rect, Qt.white)
+        background = QColor(self._plot_options.background_color) if self._plot_options else QColor("#ffffff")
+        painter.fillRect(rect, background)
 
         if not self._plot_function or not self._plot_options:
             painter.setPen(QColor("#555555"))
