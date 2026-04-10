@@ -1,8 +1,8 @@
 import sys
 from typing import Callable, List, Sequence, Tuple
 
-from PyQt5.QtCore import QSettings
-from PyQt5.QtGui import QColor, QIcon
+from PyQt5.QtCore import QSettings, Qt
+from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -39,20 +40,43 @@ DEFAULT_OPTIMIZED_RENDER = False
 DEFAULT_PALETTE = "Light"
 MAX_HISTORY_ITEMS = 10
 APP_ID = "OpenAI.Codex.EqnPlot"
-MULTI_CURVE_COLORS = ["#2563eb", "#059669", "#dc2626", "#7c3aed", "#ea580c", "#0f766e"]
+LIGHT_CURVE_COLORS = [
+    "#d1495b",
+    "#2563eb",
+    "#059669",
+    "#d97706",
+    "#7c3aed",
+    "#0f766e",
+    "#dc2626",
+    "#0891b2",
+    "#65a30d",
+    "#ea580c",
+]
+DARK_CURVE_COLORS = [
+    "#fb7185",
+    "#60a5fa",
+    "#34d399",
+    "#fbbf24",
+    "#a78bfa",
+    "#22d3ee",
+    "#f87171",
+    "#2dd4bf",
+    "#a3e635",
+    "#fb923c",
+]
 
 PALETTES = {
     "Light": {
         "background": "#ffffff",
-        "curve": "#d1495b",
         "axis": "#222222",
         "grid": "#c8d5dd",
+        "curves": LIGHT_CURVE_COLORS,
     },
     "Dark": {
         "background": "#111827",
-        "curve": "#f87171",
         "axis": "#f3f4f6",
         "grid": "#334155",
+        "curves": DARK_CURVE_COLORS,
     },
 }
 
@@ -66,13 +90,12 @@ class MainWindow(QMainWindow):
 
         self._parser = ExpressionParser()
         self._background_color = PALETTES[DEFAULT_PALETTE]["background"]
-        self._curve_color = PALETTES[DEFAULT_PALETTE]["curve"]
         self._axis_color = PALETTES[DEFAULT_PALETTE]["axis"]
         self._grid_color = PALETTES[DEFAULT_PALETTE]["grid"]
         self._custom_background_color = self._background_color
-        self._custom_curve_color = self._curve_color
         self._custom_axis_color = self._axis_color
         self._custom_grid_color = self._grid_color
+        self._custom_curve_colors: List[str] = []
         self._color_labels = []
 
         icon = load_app_icon()
@@ -119,8 +142,11 @@ class MainWindow(QMainWindow):
         form_layout.addRow("Recents", self.history_combo)
 
         self.curve_list = QListWidget()
-        self.curve_list.setToolTip("Liste simple des courbes actuellement affichees.")
+        self.curve_list.setToolTip(
+            "Liste des courbes affichees. En mode Custom, double-cliquez une courbe pour changer sa couleur."
+        )
         self.curve_list.currentTextChanged.connect(self._load_selected_curve)
+        self.curve_list.itemDoubleClicked.connect(self._edit_curve_color)
         self.add_curve_button = QPushButton("Ajouter")
         self.add_curve_button.setToolTip("Ajoute l'expression courante a la liste des courbes.")
         self.add_curve_button.clicked.connect(self.add_curve)
@@ -195,36 +221,30 @@ class MainWindow(QMainWindow):
             "Choisissez une palette predefinie ou Custom pour regler les couleurs manuellement."
         )
         self.palette_combo.currentTextChanged.connect(self._apply_palette_choice)
-        self.curve_color_button = QPushButton("Courbe")
         self.axis_color_button = QPushButton("Axes")
         self.grid_color_button = QPushButton("Grille")
         self.background_color_button = QPushButton("Fond")
         self.background_color_button.setToolTip("Choisit la couleur de fond de la zone de trace.")
-        self.curve_color_button.setToolTip("Choisit la couleur de la courbe.")
         self.axis_color_button.setToolTip("Choisit la couleur des axes et du cadre du graphe.")
         self.grid_color_button.setToolTip("Choisit la couleur de la grille.")
         self.background_color_button.clicked.connect(lambda: self._pick_color("background"))
-        self.curve_color_button.clicked.connect(lambda: self._pick_color("curve"))
         self.axis_color_button.clicked.connect(lambda: self._pick_color("axis"))
         self.grid_color_button.clicked.connect(lambda: self._pick_color("grid"))
 
         palette_label = QLabel("Palette")
         background_label = QLabel("Fond")
-        curve_label = QLabel("Courbe")
         axis_label = QLabel("Axes")
         grid_label = QLabel("Grille")
-        self._color_labels = [background_label, curve_label, axis_label, grid_label]
+        self._color_labels = [background_label, axis_label, grid_label]
 
         color_layout.addWidget(palette_label, 0, 0)
         color_layout.addWidget(self.palette_combo, 0, 1)
         color_layout.addWidget(background_label, 1, 0)
         color_layout.addWidget(self.background_color_button, 1, 1)
-        color_layout.addWidget(curve_label, 2, 0)
-        color_layout.addWidget(self.curve_color_button, 2, 1)
-        color_layout.addWidget(axis_label, 3, 0)
-        color_layout.addWidget(self.axis_color_button, 3, 1)
-        color_layout.addWidget(grid_label, 4, 0)
-        color_layout.addWidget(self.grid_color_button, 4, 1)
+        color_layout.addWidget(axis_label, 2, 0)
+        color_layout.addWidget(self.axis_color_button, 2, 1)
+        color_layout.addWidget(grid_label, 3, 0)
+        color_layout.addWidget(self.grid_color_button, 3, 1)
 
         actions_layout = QHBoxLayout()
         self.default_button = QPushButton("Default")
@@ -262,7 +282,6 @@ class MainWindow(QMainWindow):
         self._set_custom_color_controls_enabled(False)
         self.palette_combo.setCurrentText(DEFAULT_PALETTE)
         self._update_color_button(self.background_color_button, self._background_color)
-        self._update_color_button(self.curve_color_button, self._curve_color)
         self._update_color_button(self.axis_color_button, self._axis_color)
         self._update_color_button(self.grid_color_button, self._grid_color)
         self._load_settings()
@@ -273,7 +292,6 @@ class MainWindow(QMainWindow):
             return
         current_color = {
             "background": self._background_color,
-            "curve": self._curve_color,
             "axis": self._axis_color,
             "grid": self._grid_color,
         }[role]
@@ -286,10 +304,6 @@ class MainWindow(QMainWindow):
             self._background_color = color_name
             self._custom_background_color = color_name
             self._update_color_button(self.background_color_button, color_name)
-        elif role == "curve":
-            self._curve_color = color_name
-            self._custom_curve_color = color_name
-            self._update_color_button(self.curve_color_button, color_name)
         elif role == "axis":
             self._axis_color = color_name
             self._custom_axis_color = color_name
@@ -313,19 +327,17 @@ class MainWindow(QMainWindow):
     def _apply_palette(self, palette_name: str, trigger_redraw: bool) -> None:
         palette = PALETTES[palette_name]
         self._background_color = palette["background"]
-        self._curve_color = palette["curve"]
         self._axis_color = palette["axis"]
         self._grid_color = palette["grid"]
         self._update_color_button(self.background_color_button, self._background_color)
-        self._update_color_button(self.curve_color_button, self._curve_color)
         self._update_color_button(self.axis_color_button, self._axis_color)
         self._update_color_button(self.grid_color_button, self._grid_color)
+        self._refresh_curve_list_colors()
         if trigger_redraw:
             self.plot_expression()
 
     def _set_custom_color_controls_enabled(self, enabled: bool) -> None:
         self.background_color_button.setEnabled(enabled)
-        self.curve_color_button.setEnabled(enabled)
         self.axis_color_button.setEnabled(enabled)
         self.grid_color_button.setEnabled(enabled)
         for label in self._color_labels:
@@ -333,42 +345,117 @@ class MainWindow(QMainWindow):
 
     def _restore_custom_colors(self) -> None:
         self._background_color = self._custom_background_color
-        self._curve_color = self._custom_curve_color
         self._axis_color = self._custom_axis_color
         self._grid_color = self._custom_grid_color
         self._update_color_button(self.background_color_button, self._background_color)
-        self._update_color_button(self.curve_color_button, self._curve_color)
         self._update_color_button(self.axis_color_button, self._axis_color)
         self._update_color_button(self.grid_color_button, self._grid_color)
+        self._refresh_curve_list_colors()
 
-    def _active_curve_expressions(self) -> List[str]:
-        items = [self.curve_list.item(index).text().strip() for index in range(self.curve_list.count())]
-        items = [item for item in items if item]
+    def _active_curve_specs(self) -> List[CurveSpec]:
+        items: List[CurveSpec] = []
+        for index in range(self.curve_list.count()):
+            item = self.curve_list.item(index)
+            expression = item.text().strip()
+            if expression:
+                items.append(CurveSpec(expression=expression, color=self._display_curve_color(index)))
         if items:
             return items
 
         expression = self.expression_input.text().strip()
-        return [expression] if expression else []
+        if not expression:
+            return []
+        return [CurveSpec(expression=expression, color=self._display_curve_color(0))]
 
-    def _curve_color_for_index(self, index: int) -> str:
-        if index == 0:
-            return self._curve_color
-        return MULTI_CURVE_COLORS[(index - 1) % len(MULTI_CURVE_COLORS)]
-
-    def _set_curve_list_items(self, expressions: Sequence[str]) -> None:
+    def _set_curve_list_items(self, curves: Sequence[CurveSpec]) -> None:
         previous = self.curve_list.blockSignals(True)
         try:
             self.curve_list.clear()
-            for expression in expressions:
-                if expression.strip():
-                    self.curve_list.addItem(expression.strip())
+            for index, curve in enumerate(curves):
+                expression = curve.expression.strip()
+                if not expression:
+                    continue
+                item = QListWidgetItem(expression)
+                self.curve_list.addItem(item)
+                color = curve.color or self._default_custom_curve_color(index)
+                self._apply_curve_item_color(item, color)
         finally:
             self.curve_list.blockSignals(previous)
+        self._ensure_custom_curve_colors_length()
+        self._refresh_curve_list_colors()
 
     def _load_selected_curve(self, expression: str) -> None:
         expression = expression.strip()
         if expression:
             self.expression_input.setText(expression)
+
+    def _edit_curve_color(self, item: QListWidgetItem) -> None:
+        if self.palette_combo.currentText() != "Custom":
+            return
+        row = self.curve_list.row(item)
+        current_color = self._custom_curve_color_for_index(row)
+        chosen = QColorDialog.getColor(QColor(current_color), self, "Choisir la couleur de la courbe")
+        if not chosen.isValid():
+            return
+        self._set_custom_curve_color(row, chosen.name())
+        self._apply_curve_item_color(item, chosen.name())
+        self.plot_expression()
+
+    def _apply_curve_item_color(self, item: QListWidgetItem, color_hex: str) -> None:
+        item.setData(Qt.UserRole, color_hex)
+        item.setForeground(QColor(color_hex))
+        pixmap = QPixmap(12, 12)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        try:
+            painter.setPen(QColor("#666666"))
+            painter.setBrush(QColor(color_hex))
+            painter.drawRect(1, 1, 10, 10)
+        finally:
+            painter.end()
+        item.setIcon(QIcon(pixmap))
+
+    def _curve_specs_in_list(self) -> List[CurveSpec]:
+        return [
+            CurveSpec(
+                expression=self.curve_list.item(index).text().strip(),
+                color=self.curve_list.item(index).data(Qt.UserRole) or self._display_curve_color(index),
+            )
+            for index in range(self.curve_list.count())
+            if self.curve_list.item(index).text().strip()
+        ]
+
+    def _default_custom_curve_color(self, index: int) -> str:
+        return LIGHT_CURVE_COLORS[index % len(LIGHT_CURVE_COLORS)]
+
+    def _display_curve_color(self, index: int) -> str:
+        if self.palette_combo.currentText() == "Custom":
+            if index < len(self._custom_curve_colors):
+                return self._custom_curve_colors[index]
+            return self._default_custom_curve_color(index)
+        palette_name = self.palette_combo.currentText() or DEFAULT_PALETTE
+        palette_curves = PALETTES.get(palette_name, PALETTES[DEFAULT_PALETTE])["curves"]
+        return palette_curves[index % len(palette_curves)]
+
+    def _custom_curve_color_for_index(self, index: int) -> str:
+        self._ensure_custom_curve_colors_length()
+        return self._custom_curve_colors[index]
+
+    def _set_custom_curve_color(self, index: int, color_hex: str) -> None:
+        self._ensure_custom_curve_colors_length()
+        self._custom_curve_colors[index] = color_hex
+
+    def _ensure_custom_curve_colors_length(self) -> None:
+        needed = self.curve_list.count()
+        while len(self._custom_curve_colors) < needed:
+            self._custom_curve_colors.append(self._default_custom_curve_color(len(self._custom_curve_colors)))
+        if len(self._custom_curve_colors) > needed:
+            self._custom_curve_colors = self._custom_curve_colors[:needed]
+
+    def _refresh_curve_list_colors(self) -> None:
+        for index in range(self.curve_list.count()):
+            item = self.curve_list.item(index)
+            self._apply_curve_item_color(item, self._display_curve_color(index))
 
     def add_curve(self) -> None:
         expression = self.expression_input.text().strip()
@@ -383,7 +470,14 @@ class MainWindow(QMainWindow):
 
         items = [self.curve_list.item(index).text() for index in range(self.curve_list.count())]
         if expression not in items:
-            self.curve_list.addItem(expression)
+            item = QListWidgetItem(expression)
+            self.curve_list.addItem(item)
+            self._ensure_custom_curve_colors_length()
+            if self.palette_combo.currentText() != "Custom":
+                self._custom_curve_colors[self.curve_list.count() - 1] = self._display_curve_color(
+                    self.curve_list.count() - 1
+                )
+            self._refresh_curve_list_colors()
         self.curve_list.setCurrentRow(self.curve_list.count() - 1)
         self.plot_expression()
 
@@ -411,15 +505,19 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Selectionnez une courbe a supprimer.")
             return
         self.curve_list.takeItem(current_row)
+        if current_row < len(self._custom_curve_colors):
+            self._custom_curve_colors.pop(current_row)
+        self._refresh_curve_list_colors()
         self.plot_expression()
 
     def clear_curves(self) -> None:
+        self._custom_curve_colors = []
         self._set_curve_list_items([])
         self.plot_expression()
 
     def _read_options(self) -> Tuple[PlotOptions, List[Callable[[float], float]]]:
-        expressions = self._active_curve_expressions()
-        if not expressions:
+        curves = self._active_curve_specs()
+        if not curves:
             raise ExpressionError("Veuillez saisir une equation.")
 
         try:
@@ -431,11 +529,7 @@ class MainWindow(QMainWindow):
         if x_min >= x_max:
             raise ExpressionError("x min doit etre strictement inferieur a x max.")
 
-        plot_functions = [self._parser.parse(expression) for expression in expressions]
-        curves = [
-            CurveSpec(expression=expression, color=self._curve_color_for_index(index))
-            for index, expression in enumerate(expressions)
-        ]
+        plot_functions = [self._parser.parse(curve.expression) for curve in curves]
         options = PlotOptions(
             curves=curves,
             x_min=x_min,
@@ -601,9 +695,9 @@ class MainWindow(QMainWindow):
             self._apply_palette(DEFAULT_PALETTE, trigger_redraw=False)
             self._set_curve_list_items([])
             self._custom_background_color = PALETTES[DEFAULT_PALETTE]["background"]
-            self._custom_curve_color = PALETTES[DEFAULT_PALETTE]["curve"]
             self._custom_axis_color = PALETTES[DEFAULT_PALETTE]["axis"]
             self._custom_grid_color = PALETTES[DEFAULT_PALETTE]["grid"]
+            self._custom_curve_colors = []
             self._set_custom_color_controls_enabled(False)
             self._set_history_items([DEFAULT_EXPRESSION])
         finally:
@@ -645,7 +739,11 @@ class MainWindow(QMainWindow):
             self.palette_combo.setCurrentText(palette_name)
             curve_list_raw = self._settings.value("curve_list", [], type=list)
             curve_list = [item for item in curve_list_raw if isinstance(item, str) and item.strip()]
-            self._set_curve_list_items(curve_list)
+            custom_curve_colors = self._settings.value("custom_curve_colors", [], type=list)
+            self._custom_curve_colors = [
+                color for color in custom_curve_colors if isinstance(color, str) and color.strip()
+            ]
+            self._set_curve_list_items([CurveSpec(expression=item, color="") for item in curve_list])
             history_raw = self._settings.value("recent_expressions", [], type=list)
             history = [item for item in history_raw if isinstance(item, str) and item.strip()]
             if not history:
@@ -654,7 +752,6 @@ class MainWindow(QMainWindow):
 
             if palette_name == "Custom":
                 self._custom_background_color = self._settings.value("custom_background_color", "#ffffff", type=str)
-                self._custom_curve_color = self._settings.value("custom_curve_color", "#d1495b", type=str)
                 self._custom_axis_color = self._settings.value("custom_axis_color", "#222222", type=str)
                 self._custom_grid_color = self._settings.value("custom_grid_color", "#c8d5dd", type=str)
                 self._restore_custom_colors()
@@ -662,9 +759,6 @@ class MainWindow(QMainWindow):
             else:
                 self._custom_background_color = self._settings.value(
                     "custom_background_color", PALETTES[DEFAULT_PALETTE]["background"], type=str
-                )
-                self._custom_curve_color = self._settings.value(
-                    "custom_curve_color", PALETTES[DEFAULT_PALETTE]["curve"], type=str
                 )
                 self._custom_axis_color = self._settings.value(
                     "custom_axis_color", PALETTES[DEFAULT_PALETTE]["axis"], type=str
@@ -676,14 +770,15 @@ class MainWindow(QMainWindow):
                 self._set_custom_color_controls_enabled(False)
 
             self._update_color_button(self.background_color_button, self._background_color)
-            self._update_color_button(self.curve_color_button, self._curve_color)
             self._update_color_button(self.axis_color_button, self._axis_color)
             self._update_color_button(self.grid_color_button, self._grid_color)
+            self._refresh_curve_list_colors()
         finally:
             for widget, previous_state in previous_states:
                 widget.blockSignals(previous_state)
 
     def _save_settings(self) -> None:
+        self._ensure_custom_curve_colors_length()
         self._settings.setValue("expression", self.expression_input.text().strip())
         self._settings.setValue("x_min", self.x_min_input.text().strip())
         self._settings.setValue("x_max", self.x_max_input.text().strip())
@@ -693,13 +788,12 @@ class MainWindow(QMainWindow):
         self._settings.setValue("use_optimized_render", self.optimized_render_checkbox.isChecked())
         self._settings.setValue("palette", self.palette_combo.currentText())
         self._settings.setValue("background_color", self._background_color)
-        self._settings.setValue("curve_color", self._curve_color)
         self._settings.setValue("axis_color", self._axis_color)
         self._settings.setValue("grid_color", self._grid_color)
         self._settings.setValue("custom_background_color", self._custom_background_color)
-        self._settings.setValue("custom_curve_color", self._custom_curve_color)
         self._settings.setValue("custom_axis_color", self._custom_axis_color)
         self._settings.setValue("custom_grid_color", self._custom_grid_color)
+        self._settings.setValue("custom_curve_colors", self._custom_curve_colors)
         self._settings.setValue(
             "recent_expressions",
             [self.history_combo.itemText(i) for i in range(self.history_combo.count())],
