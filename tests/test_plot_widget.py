@@ -1,3 +1,4 @@
+import math
 import unittest
 
 from PyQt5.QtCore import QPoint
@@ -61,6 +62,36 @@ class PlotWidgetTests(unittest.TestCase):
         self.assertIn("indefini", captured[-1])
         widget.close()
         widget.deleteLater()
+
+    def test_render_data_is_cached_for_same_plot_area(self):
+        counter = {"calls": 0}
+
+        def counted(x_value):
+            counter["calls"] += 1
+            return x_value
+
+        widget = PlotWidget()
+        widget.resize(640, 420)
+        widget.set_plot(counted, PlotOptions(expression="x", x_min=-10, x_max=10))
+        plot_rect = widget._plot_area()
+
+        widget._get_render_data(plot_rect)
+        first_call_count = counter["calls"]
+        widget._get_render_data(plot_rect)
+
+        self.assertGreater(first_call_count, 0)
+        self.assertEqual(counter["calls"], first_call_count)
+        widget.close()
+        widget.deleteLater()
+
+    def test_simplify_samples_reduces_dense_draw_points(self):
+        plot_rect = self.widget._plot_area()
+        dense_samples = [(index * 0.001, math.sin(index * 0.001)) for index in range(5000)]
+
+        simplified = self.widget._simplify_samples_for_drawing(dense_samples, plot_rect, -1.2, 1.2)
+
+        self.assertLess(len(simplified), len(dense_samples))
+        self.assertGreater(len(simplified), 0)
 
 
 if __name__ == "__main__":

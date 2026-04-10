@@ -1,5 +1,5 @@
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from PyQt5.QtCore import QPoint, QPointF, QRect, QRectF, Qt, pyqtSignal
@@ -10,6 +10,13 @@ from eqnplot.models import PlotOptions
 
 
 PointData = Tuple[float, Optional[float]]
+
+
+@dataclass
+class RenderData:
+    samples: List[PointData]
+    y_min: float
+    y_max: float
 
 
 class PlotWidget(QWidget):
@@ -25,6 +32,8 @@ class PlotWidget(QWidget):
         self._dragging = False
         self._last_drag_pos: Optional[QPoint] = None
         self._hover_pos: Optional[QPoint] = None
+        self._render_cache: Optional[RenderData] = None
+        self._render_cache_size: Optional[Tuple[int, int]] = None
         self.setMouseTracking(True)
         self.setCursor(Qt.CrossCursor)
 
@@ -33,6 +42,7 @@ class PlotWidget(QWidget):
         self._plot_options = options
         self._status_message = ""
         self._hover_pos = None
+        self._invalidate_render_cache()
         self.update()
 
     def clear_plot(self, message: str) -> None:
@@ -40,6 +50,7 @@ class PlotWidget(QWidget):
         self._plot_options = None
         self._status_message = message
         self._hover_pos = None
+        self._invalidate_render_cache()
         self.cursor_value_changed.emit("")
         self.update()
 
@@ -174,24 +185,14 @@ class PlotWidget(QWidget):
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             return
 
-        samples = self._sample_points(plot_rect.width())
-        y_values = [y for _, y in samples if y is not None and math.isfinite(y)]
-
-        if not y_values:
+        render_data = self._get_render_data(plot_rect)
+        if render_data is None:
             painter.setPen(QColor("#aa0000"))
             painter.drawText(rect, Qt.AlignCenter, "Aucune valeur exploitable sur cet intervalle.")
             return
-
-        y_min = min(y_values)
-        y_max = max(y_values)
-        if math.isclose(y_min, y_max, rel_tol=1e-9, abs_tol=1e-9):
-            margin = 1.0 if math.isclose(y_min, 0.0, abs_tol=1e-9) else abs(y_min) * 0.1
-            y_min -= margin
-            y_max += margin
-        else:
-            padding = (y_max - y_min) * 0.08
-            y_min -= padding
-            y_max += padding
+        samples = render_data.samples
+        y_min = render_data.y_min
+        y_max = render_data.y_max
 
         if self._plot_options.show_grid:
             self._draw_grid(painter, plot_rect, y_min, y_max)
@@ -217,9 +218,14 @@ class PlotWidget(QWidget):
         if not math.isfinite(x_min) or not math.isfinite(x_max) or x_min >= x_max:
             return
         self._plot_options = replace(self._plot_options, x_min=x_min, x_max=x_max)
+        self._invalidate_render_cache()
         self.viewport_changed.emit(x_min, x_max)
         self._emit_cursor_value()
         self.update()
+
+    def resizeEvent(self, event):  # noqa: N802
+        self._invalidate_render_cache()
+        super().resizeEvent(event)
 
     def _sample_points(self, pixel_width: int) -> List[PointData]:
         assert self._plot_function is not None
@@ -242,6 +248,37 @@ class PlotWidget(QWidget):
                 points.append((x_value, None))
 
         return points
+
+    def _get_render_data(self, plot_rect: QRectF) -> Optional[RenderData]:
+        cache_size = (int(plot_rect.width()), int(plot_rect.height()))
+        if self._render_cache is not None and self._render_cache_size == cache_size:
+            return self._render_cache
+
+        samples = self._sample_points(plot_rect.width())
+        y_values = [y for _, y in samples if y is not None and math.isfinite(y)]
+        if not y_values:
+            self._render_cache = None
+            self._render_cache_size = cache_size
+            return None
+
+        y_min = min(y_values)
+        y_max = max(y_values)
+        if math.isclose(y_min, y_max, rel_tol=1e-9, abs_tol=1e-9):
+            margin = 1.0 if math.isclose(y_min, 0.0, abs_tol=1e-9) else abs(y_min) * 0.1
+            y_min -= margin
+            y_max += margin
+        else:
+            padding = (y_max - y_min) * 0.08
+            y_min -= padding
+            y_max += padding
+
+        self._render_cache = RenderData(samples=samples, y_min=y_min, y_max=y_max)
+        self._render_cache_size = cache_size
+        return self._render_cache
+
+    def _invalidate_render_cache(self) -> None:
+        self._render_cache = None
+        self._render_cache_size = None
 
     def _draw_grid(self, painter: QPainter, plot_rect: QRectF, y_min: float, y_max: float) -> None:
         assert self._plot_options is not None
@@ -317,8 +354,9 @@ class PlotWidget(QWidget):
 
         path = QPainterPath()
         drawing_segment = False
+        simplified_samples = self._simplify_samples_for_drawing(samples, plot_rect, y_min, y_max)
 
-        for x_value, y_value in samples:
+        for x_value, y_value in simplified_samples:
             if y_value is None:
                 drawing_segment = False
                 continue
@@ -339,6 +377,66 @@ class PlotWidget(QWidget):
                 path.lineTo(point)
 
         painter.drawPath(path)
+
+    def _simplify_samples_for_drawing(
+        self,
+        samples: Sequence[PointData],
+        plot_rect: QRectF,
+        y_min: float,
+        y_max: float,
+    ) -> List[PointData]:
+        if len(samples) <= max(300, int(plot_rect.width()) * 3):
+            return list(samples)
+
+        simplified: List[PointData] = []
+        current_pixel_x: Optional[int] = None
+        current_bucket: List[PointData] = []
+
+        for sample in samples:
+            x_value, y_value = sample
+            if y_value is None:
+                simplified.extend(self._flush_bucket(current_bucket, y_min, y_max))
+                current_bucket = []
+                current_pixel_x = None
+                if not simplified or simplified[-1][1] is not None:
+                    simplified.append((x_value, None))
+                continue
+
+            pixel_x = int(round(self._map_x(x_value, plot_rect)))
+            if current_pixel_x is None or pixel_x == current_pixel_x:
+                current_bucket.append(sample)
+                current_pixel_x = pixel_x
+                continue
+
+            simplified.extend(self._flush_bucket(current_bucket, y_min, y_max))
+            current_bucket = [sample]
+            current_pixel_x = pixel_x
+
+        simplified.extend(self._flush_bucket(current_bucket, y_min, y_max))
+        return simplified
+
+    @staticmethod
+    def _flush_bucket(bucket: Sequence[PointData], y_min: float, y_max: float) -> List[PointData]:
+        if not bucket:
+            return []
+
+        valid_points = [
+            point for point in bucket
+            if point[1] is not None and y_min - (y_max - y_min) * 5 <= point[1] <= y_max + (y_max - y_min) * 5
+        ]
+        if not valid_points:
+            return [(bucket[0][0], None)]
+
+        if len(valid_points) <= 2:
+            return list(valid_points)
+
+        lowest = min(valid_points, key=lambda point: point[1])
+        highest = max(valid_points, key=lambda point: point[1])
+        ordered = sorted(
+            {valid_points[0], lowest, highest, valid_points[-1]},
+            key=lambda point: point[0],
+        )
+        return ordered
 
     def _draw_hover_indicator(self, painter: QPainter, plot_rect: QRectF, y_min: float, y_max: float) -> None:
         if self._hover_pos is None or self._plot_options is None or self._plot_function is None:
